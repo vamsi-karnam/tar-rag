@@ -79,12 +79,6 @@ are the runtime execution path. **Dashed arrows** are artifact files
 read into memory once at startup (or, in the case of the manifest,
 read by your upload pipeline). **Diamonds** are decision points.
 
-> **Note for PyPI readers:** the Mermaid diagram below renders as a
-> flowchart on GitHub but appears as raw code on PyPI. View the rendered
-> version at <https://github.com/vamsi-karnam/tar-rag#system-architecture>,
-> or read the prose walkthrough that follows the code block — it covers
-> the same ground in words.
-
 ```mermaid
 %%{init: {
   'theme': 'base',
@@ -205,26 +199,6 @@ flowchart TD
     %% arrows are obvious even when zoomed out.
     linkStyle default stroke:#475569,stroke-width:1.8px,color:#ffffff,fill:none
 ```
-
-**How to read it.** A user query enters `TarRag.search`. The
-`ContextResolver` matches it against `corpus_map.json` to produce a
-`QueryContext` (which level values were pinned, plus a stable
-`context_signature` for caching). The cache is checked first — on a
-hit, the orchestrator short-circuits to the cached outcome. On a miss,
-the `SearchPlanBuilder` projects the search plan template onto that
-context to produce an ordered list of attempts. Attempt 1 (the most
-specific filter) runs sequentially; its results are scored by
-`ConfidenceScorer` against the thresholds in `confidence_config.json`.
-If confidence is `high` or `medium`, the orchestrator exits early. If
-not, attempts 2…N run **in parallel** through the same vector store
-adapter, each producing its own scored outcome. The orchestrator
-picks the best (first attempt to clear the `medium` bar, or — if
-nothing does — the last attempt that returned any results) and writes
-it back to the cache. The `RetrievalOutcome` is then returned to your
-code, which decides whether to forward the chunks to your LLM — and
-the confidence tier is what tells you "yes, this is worth answering"
-or "no, gate it out."
-
 ---
 
 ## Quickstart (three steps)
