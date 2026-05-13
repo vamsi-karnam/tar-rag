@@ -1,0 +1,75 @@
+# Implementation plan is a working document, not part of the public repo
+IMPLEMENTATION_PLAN.md
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Testing / coverage
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+.hypothesis/
+htmlcov/
+coverage.xml
+*.cover
+
+# Type checking
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Local example state files (vector store IDs, etc.)
+examples/tar_rag_output/
+examples/**/active_state.json
+
+# Local secrets / env
+.env
+.env.local
+*.local
+
+# tar-rag generated artifacts during dev / smoke runs
+/tar_rag_output/
+/scratch_output/
+
+# Local benchmark corpus — derivative of CPython, not redistributable
+/docs/
+
+/.claude
