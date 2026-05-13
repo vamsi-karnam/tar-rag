@@ -70,6 +70,4 @@ examples/**/active_state.json
 /scratch_output/
 
 # Local benchmark corpus — derivative of CPython, not redistributable
-/docs/
-
 /.claude
