@@ -86,6 +86,30 @@ read by your upload pipeline). **Diamonds** are decision points.
 > the same ground in words.
 
 ```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'fontFamily': 'Segoe UI, Roboto, Helvetica, Arial, sans-serif',
+    'fontSize': '14px',
+    'primaryColor': '#334155',
+    'primaryTextColor': '#ffffff',
+    'primaryBorderColor': '#cbd5e1',
+    'lineColor': '#cbd5e1',
+    'edgeLabelBackground': '#334155',
+    'secondaryColor': '#334155',
+    'secondaryTextColor': '#ffffff',
+    'secondaryBorderColor': '#cbd5e1',
+    'tertiaryColor': '#334155',
+    'tertiaryTextColor': '#ffffff',
+    'tertiaryBorderColor': '#cbd5e1',
+    'clusterBkg': '#1e293b',
+    'clusterBorder': '#94a3b8',
+    'titleColor': '#ffffff',
+    'noteBkgColor': '#334155',
+    'noteTextColor': '#ffffff',
+    'noteBorderColor': '#cbd5e1'
+  }
+}}%%
 flowchart TD
     %% =================== PHASE 1: CRAWL ===================
     subgraph CRAWL["Phase 1 — Crawl (once per corpus version)"]
@@ -145,6 +169,21 @@ flowchart TD
 
     %% Downstream LLM call — gated by confidence
     OUT --> LLM["<b>Your LLM call</b><br/>only when outcome.should_answer<br/>(confidence ∈ high, medium)"]
+
+    %% =================== Category-based accent fills ===================
+    %% White text on dark fills with brighter borders so every node is
+    %% clearly outlined on BOTH GitHub's dark theme and its light theme.
+    classDef artifact fill:#92400e,stroke:#fcd34d,stroke-width:2px,color:#ffffff;
+    classDef decision fill:#3730a3,stroke:#c7d2fe,stroke-width:2px,color:#ffffff;
+    classDef external fill:#065f46,stroke:#86efac,stroke-width:2px,color:#ffffff;
+    classDef result   fill:#6b21a8,stroke:#e9d5ff,stroke-width:2.5px,color:#ffffff;
+    classDef process  fill:#334155,stroke:#cbd5e1,stroke-width:1.5px,color:#ffffff;
+
+    class A1,A2,A3,A4 artifact;
+    class CH,G decision;
+    class VS,UP,LLM external;
+    class OUT result;
+    class CMD,WALK,CMB,MMB,SPB,CCB,Q,TR,CR,QC,RP,AT1,AT2,AT3,ATG,PAR,CS1,CSN,SEL,CW process;
 ```
 
 **How to read it.** A user query enters `TarRag.search`. The
