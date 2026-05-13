@@ -88,9 +88,15 @@ read by your upload pipeline). **Diamonds** are decision points.
 ```mermaid
 %%{init: {
   'theme': 'base',
+  'flowchart': {
+    'htmlLabels': true,
+    'padding': 16,
+    'nodeSpacing': 55,
+    'rankSpacing': 65,
+    'curve': 'basis',
+    'useMaxWidth': true
+  },
   'themeVariables': {
-    'fontFamily': 'Segoe UI, Roboto, Helvetica, Arial, sans-serif',
-    'fontSize': '14px',
     'primaryColor': '#334155',
     'primaryTextColor': '#ffffff',
     'primaryBorderColor': '#cbd5e1',
