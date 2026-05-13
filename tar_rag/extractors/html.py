@@ -7,7 +7,6 @@ from pathlib import Path
 
 from .base import TextExtractor
 
-
 _SKIP_TAGS = frozenset({"script", "style", "noscript", "template"})
 
 

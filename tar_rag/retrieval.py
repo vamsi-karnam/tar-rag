@@ -23,7 +23,6 @@ import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any
 
 from .adapters.base import AbstractVectorStoreAdapter
 from .cache import RetrievalCache
@@ -241,7 +240,7 @@ class RetrievalOrchestrator:
                 attempt.filters,
                 self.top_k,
             )
-        except Exception as exc:  # noqa: BLE001 — surfaced via outcome
+        except Exception as exc:
             self.logger.exception(
                 "Adapter raised during attempt %s (%s): %s",
                 attempt.attempt,
@@ -263,7 +262,7 @@ class RetrievalOrchestrator:
                 attempt.filters,
                 self.top_k,
             )
-        except Exception as exc:  # noqa: BLE001 — surfaced via outcome
+        except Exception as exc:
             self.logger.exception(
                 "Adapter raised during async attempt %s (%s): %s",
                 attempt.attempt,

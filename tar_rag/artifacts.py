@@ -12,17 +12,16 @@ configured ``level_names``), produce and persist:
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
 
 from .confidence import ConfidenceConfig
 from .corpus_map import CorpusMapBuilder
 from .manifest import MetadataManifest
 from .models import DocumentRecord
 from .search_plan import SearchPlanBuilder, SearchPlanTemplate
-
 
 CORPUS_MAP_FILENAME = "corpus_map.json"
 METADATA_MANIFEST_FILENAME = "metadata_manifest.json"
@@ -40,7 +39,7 @@ class ArtifactPaths:
     confidence_config: Path
 
     @classmethod
-    def in_directory(cls, output_dir: Path | str) -> "ArtifactPaths":
+    def in_directory(cls, output_dir: Path | str) -> ArtifactPaths:
         base = Path(output_dir)
         return cls(
             corpus_map=base / CORPUS_MAP_FILENAME,

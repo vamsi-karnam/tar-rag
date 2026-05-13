@@ -8,7 +8,8 @@ the upload step (see ``docs/integration_chroma.md``).
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from ..models import SearchResult
 from .base import AbstractVectorStoreAdapter

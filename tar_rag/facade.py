@@ -23,7 +23,6 @@ from .adapters.base import AbstractVectorStoreAdapter
 from .artifacts import (
     CONFIDENCE_CONFIG_FILENAME,
     CORPUS_MAP_FILENAME,
-    METADATA_MANIFEST_FILENAME,
     SEARCH_PLAN_FILENAME,
     load_corpus_map,
 )
@@ -81,7 +80,7 @@ class TarRag:
         top_k: int = 6,
         parallel_fallback: bool = True,
         logger: logging.Logger | None = None,
-    ) -> "TarRag":
+    ) -> TarRag:
         """Load the four artifact files from ``output_dir`` and construct a ``TarRag``.
 
         - ``corpus_map.json`` is required.

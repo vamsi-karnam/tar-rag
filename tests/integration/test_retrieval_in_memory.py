@@ -17,7 +17,6 @@ import pytest
 from tar_rag import RetrievalCache, TarRag
 from tar_rag.adapters import InMemoryAdapter
 
-
 # ---------------------------------------------------------------------------
 # Specific query — full resolution, high confidence, attempt 1
 # ---------------------------------------------------------------------------

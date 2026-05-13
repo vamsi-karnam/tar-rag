@@ -35,7 +35,6 @@ from typing import Any
 from ..models import SearchResult
 from .base import AbstractVectorStoreAdapter
 
-
 GLOBAL_SIGNATURE = "*"
 
 

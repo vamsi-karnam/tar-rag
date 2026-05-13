@@ -16,7 +16,6 @@ from pathlib import Path
 import pytest
 
 from .bench_harness import in_memory_adapter_from_fixture, run_comparison
-from .bench_queries import BenchQuery, QUERY_FIXTURES
 from .bench_report import render_text_report
 
 

@@ -8,7 +8,6 @@ from tar_rag.adapters.chroma_adapter import ChromaAdapter
 from tar_rag.adapters.in_memory_adapter import GLOBAL_SIGNATURE, filter_signature
 from tar_rag.adapters.pinecone_adapter import PineconeAdapter
 
-
 TAR_AND = {
     "type": "and",
     "filters": [

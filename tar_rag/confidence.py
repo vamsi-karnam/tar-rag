@@ -16,7 +16,6 @@ from typing import Any
 
 from .models import SearchResult
 
-
 _SCHEMA_VERSION = "1.0"
 
 
@@ -67,7 +66,7 @@ class ConfidenceThresholds:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "ConfidenceThresholds":
+    def from_dict(cls, payload: dict[str, Any]) -> ConfidenceThresholds:
         high = payload.get("high", {}) if isinstance(payload, dict) else {}
         medium = payload.get("medium", {}) if isinstance(payload, dict) else {}
         return cls(
@@ -114,12 +113,12 @@ class ConfidenceConfig:
         )
 
     @classmethod
-    def load(cls, path: Path | str) -> "ConfidenceConfig":
+    def load(cls, path: Path | str) -> ConfidenceConfig:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
         return cls.from_dict(payload)
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "ConfidenceConfig":
+    def from_dict(cls, payload: dict[str, Any]) -> ConfidenceConfig:
         return cls(
             thresholds=ConfidenceThresholds.from_dict(payload.get("thresholds", {})),
             schema_version=str(payload.get("schema_version") or _SCHEMA_VERSION),

@@ -51,7 +51,7 @@ class RetrievalCache:
         query: str, corpus_version: str, context_signature: str = ""
     ) -> str:
         digest = sha256(
-            f"{query.strip().lower()}::{corpus_version}::{context_signature}".encode("utf-8")
+            f"{query.strip().lower()}::{corpus_version}::{context_signature}".encode()
         ).hexdigest()
         return f"retrieval-{digest}"
 

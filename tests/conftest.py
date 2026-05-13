@@ -10,8 +10,8 @@ benchmark exercising the same shape of corpus.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 
@@ -22,7 +22,6 @@ from tar_rag import (
     build_artifacts,
 )
 from tar_rag.adapters import InMemoryAdapter
-
 
 LEVEL_NAMES = ["kind", "topic"]
 

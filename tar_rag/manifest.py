@@ -8,14 +8,14 @@ contract tar-rag exposes to the upload side (Option A).
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any
 
 from .errors import CorpusMapValidationError
 from .models import DocumentRecord
-
 
 _SCHEMA_VERSION = "1.0"
 
@@ -42,7 +42,7 @@ class ManifestDocument:
     size_bytes: int = 0
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "ManifestDocument":
+    def from_dict(cls, payload: dict[str, Any]) -> ManifestDocument:
         return cls(
             doc_id=str(payload["doc_id"]),
             filename=str(payload["filename"]),
@@ -104,7 +104,7 @@ class MetadataManifest:
         level_names: list[str],
         corpus_version: str,
         generated_at: str | None = None,
-    ) -> "MetadataManifest":
+    ) -> MetadataManifest:
         rows = [
             ManifestDocument(
                 doc_id=doc.doc_id,
@@ -227,7 +227,7 @@ class MetadataManifest:
         )
 
     @classmethod
-    def load(cls, path: Path | str) -> "MetadataManifest":
+    def load(cls, path: Path | str) -> MetadataManifest:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
         try:
             return cls.from_dict(payload)
@@ -237,7 +237,7 @@ class MetadataManifest:
             ) from exc
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "MetadataManifest":
+    def from_dict(cls, payload: dict[str, Any]) -> MetadataManifest:
         return cls(
             version=str(payload["version"]),
             generated_at=str(payload.get("generated_at") or ""),

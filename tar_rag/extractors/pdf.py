@@ -16,7 +16,6 @@ import re
 from ..errors import MissingExtractorDependency
 from .base import TextExtractor
 
-
 _WHITESPACE_RE = re.compile(r"\s+")
 
 

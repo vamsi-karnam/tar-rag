@@ -13,14 +13,13 @@ attempts. Each attempt names the level keys to include in its filter
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .errors import CorpusMapValidationError
 from .models import QueryContext
-
 
 _SCHEMA_VERSION = "1.0"
 
@@ -50,7 +49,7 @@ class PlanTemplateAttempt:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "PlanTemplateAttempt":
+    def from_dict(cls, payload: dict[str, Any]) -> PlanTemplateAttempt:
         return cls(
             attempt=int(payload["attempt"]),
             reason=str(payload["reason"]),
@@ -91,7 +90,7 @@ class SearchPlanTemplate:
         )
 
     @classmethod
-    def load(cls, path: Path | str) -> "SearchPlanTemplate":
+    def load(cls, path: Path | str) -> SearchPlanTemplate:
         try:
             payload = json.loads(Path(path).read_text(encoding="utf-8"))
             return cls.from_dict(payload)
@@ -101,7 +100,7 @@ class SearchPlanTemplate:
             ) from exc
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "SearchPlanTemplate":
+    def from_dict(cls, payload: dict[str, Any]) -> SearchPlanTemplate:
         return cls(
             schema_version=str(payload.get("schema_version") or _SCHEMA_VERSION),
             version=str(payload.get("version") or ""),

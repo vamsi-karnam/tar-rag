@@ -13,7 +13,6 @@ from tar_rag import (
     DocumentRecord,
 )
 
-
 LEVEL_NAMES = ["kind", "topic"]
 
 

@@ -10,7 +10,6 @@ import pytest
 from tar_rag import DocumentRecord, MetadataManifest
 from tar_rag.errors import CorpusMapValidationError
 
-
 LEVEL_NAMES = ["category", "product", "sub_type"]
 
 

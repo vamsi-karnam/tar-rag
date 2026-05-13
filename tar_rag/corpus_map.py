@@ -28,11 +28,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from datetime import datetime, timezone
-from typing import Any, Iterable
+from typing import Any
 
 from .models import DocumentRecord
-
 
 _DOCS_KEY = "_documents"
 

@@ -122,7 +122,8 @@ select = [
     "RUF", # ruff-specific
 ]
 ignore = [
-    "E501", # line length handled by formatter
+    "E501",   # line length handled by formatter
+    "RUF022", # `__all__` is intentionally grouped by semantic category, not alphabetised
 ]
 
 [tool.mypy]

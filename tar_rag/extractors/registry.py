@@ -14,7 +14,6 @@ from .pdf import PdfTextExtractor
 from .plaintext import PlainTextExtractor
 from .structured import CsvTextExtractor, JsonTextExtractor
 
-
 # Extensions that share the plaintext extractor — declared once so the
 # default registry stays compact and easy to audit.
 _PLAINTEXT_EXTENSIONS = (

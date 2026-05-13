@@ -23,12 +23,12 @@ from .registry import ExtractorRegistry
 from .structured import CsvTextExtractor, JsonTextExtractor
 
 __all__ = [
-    "TextExtractor",
-    "ExtractorRegistry",
-    "PlainTextExtractor",
-    "PdfTextExtractor",
+    "CsvTextExtractor",
     "DocxTextExtractor",
+    "ExtractorRegistry",
     "HtmlTextExtractor",
     "JsonTextExtractor",
-    "CsvTextExtractor",
+    "PdfTextExtractor",
+    "PlainTextExtractor",
+    "TextExtractor",
 ]

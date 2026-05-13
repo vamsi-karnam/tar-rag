@@ -14,7 +14,6 @@ from tar_rag import (
 )
 from tar_rag.errors import CorpusMapValidationError
 
-
 LEVEL_NAMES = ["category", "product", "sub_type"]
 
 

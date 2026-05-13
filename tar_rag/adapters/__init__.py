@@ -16,12 +16,12 @@ from .pinecone_adapter import PineconeAdapter
 from .qdrant_adapter import QdrantAdapter
 
 __all__ = [
-    "AbstractVectorStoreAdapter",
-    "InMemoryAdapter",
     "GLOBAL_SIGNATURE",
-    "filter_signature",
+    "AbstractVectorStoreAdapter",
+    "ChromaAdapter",
+    "InMemoryAdapter",
     "OpenAIVectorStoreAdapter",
     "PineconeAdapter",
     "QdrantAdapter",
-    "ChromaAdapter",
+    "filter_signature",
 ]

@@ -24,7 +24,7 @@ from tar_rag.adapters import AbstractVectorStoreAdapter, InMemoryAdapter
 from tar_rag.confidence import ConfidenceScorer
 from tar_rag.models import SearchResult
 
-from .bench_queries import BenchQuery, QUERY_FIXTURES
+from .bench_queries import QUERY_FIXTURES, BenchQuery
 
 
 @dataclass

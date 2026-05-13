@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import statistics
-from typing import Iterable
+from collections.abc import Iterable
 
 from .bench_harness import BenchmarkReport, ComparisonRow, QueryMetrics
 

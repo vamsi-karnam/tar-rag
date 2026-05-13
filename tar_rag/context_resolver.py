@@ -18,7 +18,6 @@ from typing import Any
 
 from .models import ConversationTurn, QueryContext
 
-
 _TOKEN_RE = re.compile(r"[^a-z0-9]+")
 
 

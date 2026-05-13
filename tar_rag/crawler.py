@@ -17,15 +17,14 @@ import json
 import logging
 import warnings
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Iterator
 
 from .errors import MissingExtractorDependency, UnsupportedFileType
 from .extractors.registry import ExtractorRegistry
 from .models import DocumentRecord
-
 
 # ---------------------------------------------------------------------------
 # HierarchyExtractor interface
@@ -88,7 +87,7 @@ class _AliasSidecar:
     by_filename: dict[str, list[str]]
 
     @classmethod
-    def load(cls, folder: Path) -> "_AliasSidecar":
+    def load(cls, folder: Path) -> _AliasSidecar:
         sidecar_path = folder / _ALIAS_SIDECAR_NAME
         if not sidecar_path.exists():
             return cls(by_filename={})
@@ -225,8 +224,7 @@ class DirectoryCrawler:
     # ------------------------------------------------------------------
 
     def _iter_files(self, root: Path) -> Iterator[Path]:
-        for entry in sorted(self._walk(root)):
-            yield entry
+        yield from sorted(self._walk(root))
 
     def _walk(self, current: Path) -> Iterable[Path]:
         try:
