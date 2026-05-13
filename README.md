@@ -94,8 +94,8 @@ read by your upload pipeline). **Diamonds** are decision points.
     'primaryColor': '#334155',
     'primaryTextColor': '#ffffff',
     'primaryBorderColor': '#cbd5e1',
-    'lineColor': '#cbd5e1',
-    'edgeLabelBackground': '#334155',
+    'lineColor': '#64748b',
+    'edgeLabelBackground': '#1e293b',
     'secondaryColor': '#334155',
     'secondaryTextColor': '#ffffff',
     'secondaryBorderColor': '#cbd5e1',
@@ -112,7 +112,7 @@ read by your upload pipeline). **Diamonds** are decision points.
 }}%%
 flowchart TD
     %% =================== PHASE 1: CRAWL ===================
-    subgraph CRAWL["Phase 1 — Crawl (once per corpus version)"]
+    subgraph CRAWL["Phase 1 — Crawl (once/corpus version)"]
         direction TB
         CMD["User runs<br/><b>tar-rag crawl ./corpus --levels …</b>"]
         CMD --> WALK["DirectoryCrawler<br/>walk + extract text via ExtractorRegistry"]
@@ -184,6 +184,20 @@ flowchart TD
     class VS,UP,LLM external;
     class OUT result;
     class CMD,WALK,CMB,MMB,SPB,CCB,Q,TR,CR,QC,RP,AT1,AT2,AT3,ATG,PAR,CS1,CSN,SEL,CW process;
+
+    %% =================== Subgraph (phase box) styling ===================
+    %% GitHub's mermaid renderer ignores `clusterBkg` / `titleColor` from
+    %% themeVariables for subgraphs — we forcefully style each subgraph
+    %% directly. `color:` here drives the subgraph title font colour.
+    style CRAWL fill:#1e293b,stroke:#94a3b8,stroke-width:1.5px,color:#ffffff
+    style QUERY fill:#1e293b,stroke:#94a3b8,stroke-width:1.5px,color:#ffffff
+
+    %% =================== Edge (arrow) styling ===================
+    %% `lineColor` in themeVariables is unreliable on GitHub — every
+    %% edge gets explicit `linkStyle default` for a true mid-slate that
+    %% reads on white pages AND dark pages. Stroke width bumped so the
+    %% arrows are obvious even when zoomed out.
+    linkStyle default stroke:#475569,stroke-width:1.8px,color:#ffffff,fill:none
 ```
 
 **How to read it.** A user query enters `TarRag.search`. The
