@@ -9,16 +9,36 @@ library that adds structural navigation to any RAG pipeline.
 
 ---
 
-## Description
+## Why tar-rag exists
 
-Most RAG pipelines treat retrieval as a flat semantic search problem. That works when the corpus is uniform, but breaks down on directories spanning multiple categories and depth levels — developers end up writing custom routing logic for every new corpus tree.
+Most RAG pipelines default to flat top-K semantic search. Even teams that
+add metadata filtering have to either (a) write per-query routing logic
+by hand, or (b) pay LLM tokens for a self-querying retriever to pick
+filters at runtime. **`tar-rag` fills that exact gap:** it derives the
+routing layer structurally from your corpus directory topology, with
+zero LLM calls and zero per-query token cost.
 
-`tar-rag` solves this by adding a thin structural layer on top: it crawls your corpus directory, builds a topology map of the knowledge structure, and at query time resolves the user's query to the relevant branch of that map and applies it as a vector-store filter — with progressive fallback from specific to global when needed.
+Three important things it does for you, every query:
 
-**The result:** Fewer chunks reach the LLM, retrieved snippets are more accurate, and search latency on large stores drops because the ANN candidate pool is pre-filtered. 
-See [`benchmark.md`](benchmark.md) for measured token and latency savings against a real-world CPython corpus.
+| Feature | Whats's the default | How tar-rag does it |
+|---|---|---|
+| **Saves tokens** | Irrelevant retrieved chunks still get forwarded to your LLM by default. Every wasted character incurs cost. | A confidence gate refuses to forward chunks below a tunable score threshold — measured **0 chars vs 19,659 chars** forwarded on irrelevant queries in the [benchmark](benchmark.md). |
+| **Improves retrieval accuracy** | Flat top-K mixes chunks from unrelated parts of the corpus, diluting the top score. | Pre-filters the ANN candidate pool to the relevant branch of the topology — measured **+17% top-score** on specific queries vs unfiltered baseline. |
+| **Improves speed at scale** | Unfiltered ANN over the whole index gets slower as the corpus grows. | Most vector stores honour metadata pre-filters in their ANN path, dropping the candidate pool from the whole index to the relevant subtree. In the [benchmark](benchmark.md) tar-rag was **faster than baseline on 6 of 8 queries** despite the extra context-resolution step. |
 
-*Scope: `tar-rag` does not perform embedding, chunking, own the vector store, or the LLM. It only provides a deterministic retrieval strategy for your RAG pipeline*
+How it works: `tar-rag` crawls your corpus directory,
+builds a topology map of the knowledge structure, resolves each query
+to the relevant branch of that map, applies it as a vector-store
+filter, and progressively broadens the filter only if confidence is
+too low — exiting as soon as a confident answer is found.
+
+See [`benchmark.md`](benchmark.md) for the full measured numbers
+against a real CPython corpus.
+
+*Scope: `tar-rag` does not perform embedding, chunking, own the vector
+store, or the LLM. It only provides a deterministic, token-free
+retrieval-strategy layer that plugs into whatever pipeline you already
+have.*
 
 ## Install
 
@@ -67,6 +87,8 @@ it either finds a confident answer or exhausts the chain.
 `tar-rag` never owns embeddings, chunking, vector store creation, or
 LLM answer generation. It only owns structural navigation.
 
+---
+
 ### High-Level Example
 
 **How is this different from similar retrievers that currently exist?**
@@ -84,7 +106,7 @@ predicates including range queries, free-form attribute conditions,
 and fields that aren't part of a hierarchy.
 
 Concretely, given the query *"What does asyncio.TaskGroup do in the
-source code?"* against a corpus indexed as `kind/topic` (e.g. the
+source code?"* against a corpus indexed as `type/topic` (e.g. the
 CPython documentation + stdlib source corpus used in
 [`benchmark.md`](benchmark.md)), an LLM-based retriever would send
 the query plus a metadata schema description to an LLM and receive
@@ -99,10 +121,11 @@ back something like:
 
 — at the cost of one extra LLM call, ~200–500 ms of latency, and
 the small risk of the model hallucinating a filter field that
-doesn't exist in the schema. `tar-rag` produces the same filter by
-matching `"asyncio"` against the topology map's `topic` values and
-`"source"` against the `kind` dimension — at sub-millisecond speed,
-with no model involved.
+doesn't exist in the schema. 
+
+> However, `tar-rag` produces the same filter by matching `"asyncio"` against the topology map's `topic` values and `"source"` against the `type` dimension — at sub-millisecond speed, with no model involved.
+
+---
 
 ### System architecture
 
@@ -251,8 +274,9 @@ tar-rag crawl ./corpus --output ./tar_rag_output/
 **About level names.** Pass `--levels` whenever you can: the names you
 choose appear in the manifest, in every chunk's metadata in the vector
 store, and as keys in `tar-rag`'s filter dicts. Semantic names like
-`category,product,sub_type` are far easier to debug than `level_0,
-level_1, level_2`. If you omit `--levels`, the crawler scans the
+`category,product,sub_type` for each depth level of the corpus are 
+far easier to debug than `level_0, level_1, level_2`. 
+If you choose to omit `--levels`, the crawler scans the
 deepest path under the corpus root, generates generic names, and warns
 you — useful for a quick first look but worth replacing with semantic
 names for anything you'll keep.
@@ -709,7 +733,3 @@ See [`examples/upload_openai.py`](examples/upload_openai.py) for the example.
 ---
 
 > *"Data should empower, not overwhelm"*
-=======
-uploaded version and skip the upload if they match.
----
->>>>>>> ef727ebd469337009fe35323bbe333863db0cfca
