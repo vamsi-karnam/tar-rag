@@ -12,6 +12,7 @@ library that adds structural navigation to any RAG pipeline.
 ## Description
 
 Most RAG pipelines treat retrieval as a flat semantic search problem.
+
 `tar-rag` adds a thin layer on top: it crawls your corpus directory,
 builds a topology map of the knowledge structure, and at query time it
 resolves the user's query to the relevant branch of that map and applies
@@ -23,11 +24,6 @@ to global if needed.
 **The result: Fewer chunks reach the LLM, snippets are more precise, and
 search latency on large stores drops because the ANN candidate pool is
 pre-filtered. See [`benchmarks`](benchmark.md) for an example data corpus.**
-
-## Status
-
-`tar-rag` is **pre-release (v0.1.0, alpha)**. The public API is stable
-enough to build against but may move before 1.0. See `CHANGELOG.md`.
 
 ## Install
 
