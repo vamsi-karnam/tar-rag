@@ -9,6 +9,8 @@ library that adds structural navigation to any RAG pipeline.
 
 ---
 
+## Description
+
 Most RAG pipelines treat retrieval as a flat semantic search problem.
 `tar-rag` adds a thin layer on top: it crawls your corpus directory,
 builds a topology map of the knowledge structure, and at query time it
@@ -16,9 +18,11 @@ resolves the user's query to the relevant branch of that map and applies
 it as a vector store filter — with progressive fallback from specific
 to global if needed.
 
-The result: fewer chunks reach the LLM, snippets are more precise, and
+`tar-rag` does not perform embedding, chunking, own the vector store, or the LLM.
+
+**The result: Fewer chunks reach the LLM, snippets are more precise, and
 search latency on large stores drops because the ANN candidate pool is
-pre-filtered.
+pre-filtered. See [`benchmarks`](benchmark.md) for an example data corpus.**
 
 ## Status
 
@@ -71,6 +75,43 @@ it either finds a confident answer or exhausts the chain.
 
 `tar-rag` never owns embeddings, chunking, vector store creation, or
 LLM answer generation. It only owns structural navigation.
+
+### High-Level Example
+
+**How is this different from similar retrievers that currently exist?**
+
+Similar retrievers in the ecosystem solve the same routing problem —
+extracting structural filters from a natural-language query — but
+typically do it by routing each query through an LLM that produces a
+filter dict from a metadata schema description. `tar-rag` resolves
+filters lexically against a pre-built topology map: no LLM
+round-trip, no per-query token cost, fully deterministic, and faster
+on the hot path by one to two orders of magnitude. The trade-off is
+scope — tar-rag handles hierarchical structural filters derived from
+a directory tree; LLM-based approaches handle arbitrary metadata
+predicates including range queries, free-form attribute conditions,
+and fields that aren't part of a hierarchy.
+
+Concretely, given the query *"What does asyncio.TaskGroup do in the
+source code?"* against a corpus indexed as `kind/topic` (e.g. the
+CPython documentation + stdlib source corpus used in
+[`benchmark.md`](benchmark.md)), an LLM-based retriever would send
+the query plus a metadata schema description to an LLM and receive
+back something like:
+
+```json
+{
+  "query": "asyncio TaskGroup behavior",
+  "filter": "and(eq('kind', 'source'), eq('topic', 'asyncio'))"
+}
+```
+
+— at the cost of one extra LLM call, ~200–500 ms of latency, and
+the small risk of the model hallucinating a filter field that
+doesn't exist in the schema. `tar-rag` produces the same filter by
+matching `"asyncio"` against the topology map's `topic` values and
+`"source"` against the `kind` dimension — at sub-millisecond speed,
+with no model involved.
 
 ### System architecture
 
@@ -278,7 +319,7 @@ positives, open `tar_rag_output/confidence_config.json` now and adjust
 forwards zero chunks to your LLM — the bigger the gap between your
 "good" and "weak" query scores, the more room you have to tune.
 
-Most users skip this step on the first run, see one or two surprises,
+Most users would prefer to skip this step on the first run, see one or two surprises,
 then come back and adjust. Either path is fine. The [Tuning section
 below](#step-4--tune-for-your-corpus--embedding-model) explains every
 threshold and what to look at when adjusting.
@@ -322,95 +363,11 @@ python examples/upload_openai.py \
 ```
 
 See [`examples/integration_openai.md`](examples/integration_openai.md)
-for the full walkthrough.
+for the OpenAI example.
 
-#### Pinecone
+See [`examples/integration_other.md`](examples/integration_other.md)
+for other examples.
 
-```python
-from pinecone import Pinecone
-from tar_rag.manifest import MetadataManifest
-import your_pipeline  # YOUR chunker + embedder
-
-pc = Pinecone(api_key="...")
-index = pc.Index("my-index")
-manifest = MetadataManifest.load("./tar_rag_output/metadata_manifest.json")
-
-for doc in manifest:
-    text = your_pipeline.extract_text(doc.relative_path)
-    chunks = your_pipeline.chunk(text)
-    embeddings = your_pipeline.embed(chunks)
-
-    vectors = [
-        {
-            "id": f"{doc.doc_id}_chunk_{i}",
-            "values": emb,
-            "metadata": {
-                **doc.metadata,    # <-- tar-rag's contribution
-                "text": chunk,
-                "filename": doc.filename,
-            },
-        }
-        for i, (chunk, emb) in enumerate(zip(chunks, embeddings))
-    ]
-    index.upsert(vectors=vectors)
-```
-
-#### Qdrant
-
-```python
-from qdrant_client import QdrantClient
-from qdrant_client.models import PointStruct, VectorParams, Distance
-from tar_rag.manifest import MetadataManifest
-import your_pipeline
-
-client = QdrantClient(url="http://localhost:6333")
-manifest = MetadataManifest.load("./tar_rag_output/metadata_manifest.json")
-
-client.create_collection(
-    "my-kb",
-    vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
-)
-
-# Payload indexes per level — this is what makes filtered search fast.
-for level in manifest.level_names:
-    client.create_payload_index("my-kb", field_name=level, field_schema="keyword")
-
-points, point_id = [], 0
-for doc in manifest:
-    chunks = your_pipeline.chunk(your_pipeline.extract_text(doc.relative_path))
-    for chunk, emb in zip(chunks, your_pipeline.embed(chunks)):
-        points.append(PointStruct(
-            id=point_id,
-            vector=emb,
-            payload={**doc.metadata, "text": chunk, "filename": doc.filename},
-        ))
-        point_id += 1
-
-client.upsert("my-kb", points=points)
-```
-
-#### Chroma
-
-```python
-import chromadb
-from tar_rag.manifest import MetadataManifest
-import your_pipeline
-
-collection = chromadb.Client().create_collection("my-kb")
-manifest = MetadataManifest.load("./tar_rag_output/metadata_manifest.json")
-
-for doc in manifest:
-    chunks = your_pipeline.chunk(your_pipeline.extract_text(doc.relative_path))
-    embeddings = your_pipeline.embed(chunks)
-    collection.add(
-        ids=[f"{doc.doc_id}_chunk_{i}" for i in range(len(chunks))],
-        embeddings=embeddings,
-        documents=chunks,
-        # Chroma rejects None metadata values — strip them.
-        metadatas=[{k: v for k, v in doc.metadata.items() if v is not None}
-                   for _ in chunks],
-    )
-```
 
 ### Step 3 — Query through tar-rag
 
@@ -554,47 +511,17 @@ hand-fitting and won't generalise.
 
 ---
 
-## Async support
+## Supported file types out of the box
 
-Every public entry point has a native async counterpart. The async
-invariant is:
+- PDF (`pypdf`, optional extra)
+- DOCX (`python-docx`, optional extra)
+- Plaintext: `.txt`, `.md`, `.py`, `.c`, `.cpp`, `.h`, `.hpp`, `.js`, `.ts`, `.css`, `.rst`
+- HTML (stdlib `html.parser`)
+- JSON, CSV (stdlib)
 
-> **Whatever you can do with `tar-rag` synchronously, you can do with
-> the same arguments asynchronously by prefixing the method with `a`.**
-
-So:
-
-| Sync | Async |
-|---|---|
-| `tar.search(query)` | `tar.asearch(query)` |
-| `orchestrator.execute(ctx, attempts)` | `orchestrator.aexecute(ctx, attempts)` |
-| `adapter.search(query, filters, top_k)` | `adapter.asearch(query, filters, top_k)` |
-| `cache.get(key)` / `cache.set(key, value)` | `cache.aget(key)` / `cache.aset(key, value)` |
-
-```python
-result = await tar.asearch("What does asyncio.TaskGroup do in the source code?")
-```
-
-**What the async path does under the hood:**
-
-- For each fallback attempt, the orchestrator calls `adapter.asearch(...)`.
-- The default `asearch` on `AbstractVectorStoreAdapter` runs the sync
-  `search()` in a worker thread via `asyncio.to_thread`. That means
-  every adapter is async-compatible out of the box even if its
-  underlying client is sync-only.
-- Adapters whose client has a native async API (e.g.
-  `openai.AsyncOpenAI`, `AsyncQdrantClient`) can override `asearch`
-  for true async I/O. The bundled `OpenAIVectorStoreAdapter` and
-  `QdrantAdapter` accept an optional `async_client` argument and use it
-  if provided.
-- Parallel fallback uses `asyncio.gather` on the async path and
-  `concurrent.futures.ThreadPoolExecutor` on the sync path — the
-  fallback shape and ordering are identical.
-
-In short: `asearch` and `search` produce equivalent `RetrievalOutcome`
-results given equivalent inputs (modulo wall-time differences from the
-underlying I/O). The orchestrator's decision logic — confidence
-gating, early exit, progressive broadening, cache lookup — is the same.
+All extractors are pluggable via the `TextExtractor` interface —
+override the registry to use `pdfplumber`, `pymupdf`, `unstructured`,
+or any custom extractor.
 
 ---
 
@@ -658,17 +585,47 @@ running `search` in a thread.
 
 ---
 
-## Supported file types out of the box
+## Async support
 
-- PDF (`pypdf`, optional extra)
-- DOCX (`python-docx`, optional extra)
-- Plaintext: `.txt`, `.md`, `.py`, `.c`, `.cpp`, `.h`, `.hpp`, `.js`, `.ts`, `.css`, `.rst`
-- HTML (stdlib `html.parser`)
-- JSON, CSV (stdlib)
+Every public entry point has a native async counterpart. The async
+invariant is:
 
-All extractors are pluggable via the `TextExtractor` interface —
-override the registry to use `pdfplumber`, `pymupdf`, `unstructured`,
-or any custom extractor.
+> **Whatever you can do with `tar-rag` synchronously, you can do with
+> the same arguments asynchronously by prefixing the method with `a`.**
+
+So:
+
+| Sync | Async |
+|---|---|
+| `tar.search(query)` | `tar.asearch(query)` |
+| `orchestrator.execute(ctx, attempts)` | `orchestrator.aexecute(ctx, attempts)` |
+| `adapter.search(query, filters, top_k)` | `adapter.asearch(query, filters, top_k)` |
+| `cache.get(key)` / `cache.set(key, value)` | `cache.aget(key)` / `cache.aset(key, value)` |
+
+```python
+result = await tar.asearch("What does asyncio.TaskGroup do in the source code?")
+```
+
+**What the async path does under the hood:**
+
+- For each fallback attempt, the orchestrator calls `adapter.asearch(...)`.
+- The default `asearch` on `AbstractVectorStoreAdapter` runs the sync
+  `search()` in a worker thread via `asyncio.to_thread`. That means
+  every adapter is async-compatible out of the box even if its
+  underlying client is sync-only.
+- Adapters whose client has a native async API (e.g.
+  `openai.AsyncOpenAI`, `AsyncQdrantClient`) can override `asearch`
+  for true async I/O. The bundled `OpenAIVectorStoreAdapter` and
+  `QdrantAdapter` accept an optional `async_client` argument and use it
+  if provided.
+- Parallel fallback uses `asyncio.gather` on the async path and
+  `concurrent.futures.ThreadPoolExecutor` on the sync path — the
+  fallback shape and ordering are identical.
+
+In short: `asearch` and `search` produce equivalent `RetrievalOutcome`
+results given equivalent inputs (modulo wall-time differences from the
+underlying I/O). The orchestrator's decision logic — confidence
+gating, early exit, progressive broadening, cache lookup — is the same.
 
 ---
 
@@ -780,5 +737,9 @@ tar-rag's cache directly.
 The `corpus_version` is a deterministic SHA-256 of the document
 checksums; if no documents changed, the version doesn't change. Your
 upload script should check `manifest.version` against the last
-uploaded version and skip the upload if they match.
+uploaded version and skip the upload if they match. 
+See [`examples/upload_openai.py`](examples/upload_openai.py) for the example.
+
 ---
+
+> *"Data should empower, not overwhelm"*
