@@ -7,6 +7,18 @@
 **Topology-Aware Retrieval for RAG** — a vector-store-agnostic Python
 library that adds structural navigation to any RAG pipeline.
 
+### Optimal use cases
+1. Documentation portals
+2. Source code repositories
+3. Enterprise knowledge bases
+4. Product manuals
+5. SOP trees
+6. API docs
+7. Compliance repositories
+8. Engineering archives
+9. Filesystem-organized corpora
+10. code/documentation RAG
+
 ---
 
 ## Why tar-rag exists
