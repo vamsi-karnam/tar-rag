@@ -11,19 +11,14 @@ library that adds structural navigation to any RAG pipeline.
 
 ## Description
 
-Most RAG pipelines treat retrieval as a flat semantic search problem.
+Most RAG pipelines treat retrieval as a flat semantic search problem. That works when the corpus is uniform, but breaks down on directories spanning multiple categories and depth levels — developers end up writing custom routing logic for every new corpus tree.
 
-`tar-rag` adds a thin layer on top: it crawls your corpus directory,
-builds a topology map of the knowledge structure, and at query time it
-resolves the user's query to the relevant branch of that map and applies
-it as a vector store filter — with progressive fallback from specific
-to global if needed.
+`tar-rag` solves this by adding a thin structural layer on top: it crawls your corpus directory, builds a topology map of the knowledge structure, and at query time resolves the user's query to the relevant branch of that map and applies it as a vector-store filter — with progressive fallback from specific to global when needed.
 
-`tar-rag` does not perform embedding, chunking, own the vector store, or the LLM.
+**The result:** Fewer chunks reach the LLM, retrieved snippets are more accurate, and search latency on large stores drops because the ANN candidate pool is pre-filtered. 
+See [`benchmark.md`](benchmark.md) for measured token and latency savings against a real-world CPython corpus.
 
-**The result: Fewer chunks reach the LLM, snippets are more precise, and
-search latency on large stores drops because the ANN candidate pool is
-pre-filtered. See [`benchmarks`](benchmark.md) for an example data corpus.**
+*Scope: `tar-rag` does not perform embedding, chunking, own the vector store, or the LLM. It only provides a deterministic retrieval strategy for your RAG pipeline*
 
 ## Install
 
