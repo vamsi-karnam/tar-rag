@@ -50,7 +50,7 @@ against a real CPython corpus.
 *Scope: `tar-rag` does not perform embedding, chunking, own the vector
 store, or the LLM. It only provides a deterministic, token-free
 retrieval-strategy layer that plugs into whatever pipeline you already
-have.*
+have. `tar-rag` also makes the reasonable assumption that filesystem hierarchy correlates with semantic structure as is the case with most production system corpora.*
 
 ## Install
 
