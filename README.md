@@ -9,21 +9,6 @@ library that adds structural navigation to any RAG pipeline.
 
 ---
 
-## Use cases
-
-1. Documentation portals
-2. Source code repositories
-3. Enterprise knowledge bases
-4. Product manuals
-5. SOP trees
-6. API docs
-7. Compliance repositories
-8. Engineering archives
-9. Filesystem-organized corpora
-10. Code / documentation RAG
-
----
-
 ## Description
 
 Most RAG pipelines do flat top-K semantic search — every query scans the entire
@@ -62,6 +47,21 @@ query: "How does the OAuth token refresh flow work?"
 > This is the default state for documentation portals, source repos, SOP
 > trees, and most mature internal knowledge bases — which is exactly the
 > territory `tar-rag` is designed for.
+
+---
+
+## Use cases
+
+1. Documentation portals
+2. Source code repositories
+3. Enterprise knowledge bases
+4. Product manuals
+5. SOP trees
+6. API docs
+7. Compliance repositories
+8. Engineering archives
+9. Filesystem-organized corpora
+10. Code / documentation RAG
 
 ---
 
