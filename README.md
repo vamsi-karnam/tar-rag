@@ -22,20 +22,7 @@ starts it builds a topology map from your corpus's directory layout. At query
 time it scores each branch of that map lexically against the query and produces
 a **heat map**: the hottest branches go first, the rest cool off. ANN search
 runs scoped to the hottest branch, and the filter only broadens if confidence
-isn't high enough — exiting as soon as a confident answer is found.
-
-```
-query: "How does the OAuth token refresh flow work?"
-
-  ┌────────────────────────────────────────────────────────────┐
-  │ auth/oauth        ████████████   0.92   ← start ANN here   │
-  │ auth/sessions     █████          0.41                      │
-  │ billing/refunds   █              0.08                      │
-  │ billing/invoices                 0.02                      │
-  └────────────────────────────────────────────────────────────┘
-                          │
-                          ▼   scoped ANN; broaden only if needed
-```
+isn't high enough — exiting as soon as a confident answer is found. See [example](#high-level-example). 
 
 > **Advantage.** No extra LLM call, no per-query token cost, sub-millisecond on the hot path, no hallucination, fully deterministic.
 
@@ -111,6 +98,20 @@ However `tar-rag` does the following:
    broadens to just `service=auth`, then global, until something passes.
 4. If nothing clears the threshold, returns **zero chunks** rather than
    forwarding weak ones to your LLM — that's the token gate.
+
+```
+# Example
+query: "How does the OAuth token refresh flow work?"
+
+  ┌────────────────────────────────────────────────────────────┐
+  │ auth/oauth        ████████████   0.92   ← start ANN here   │
+  │ auth/sessions     █████          0.41                      │
+  │ billing/refunds   █              0.08                      │
+  │ billing/invoices                 0.02                      │
+  └────────────────────────────────────────────────────────────┘
+                          │
+                          ▼   scoped ANN; broaden only if needed
+```
 
 The vector store and embedding model are unchanged. The only addition is a
 metadata filter derived deterministically from the query.
