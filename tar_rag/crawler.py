@@ -258,7 +258,7 @@ class DirectoryCrawler:
 
     def _make_record(self, file_path: Path) -> DocumentRecord | None:
         extension = file_path.suffix.lower()
-        extractor = self.registry.get(extension)
+        extractor = None if extension == "" else self.registry.get(extension)
         if extractor is None:
             if self.strict_unknown_extensions:
                 raise UnsupportedFileType(

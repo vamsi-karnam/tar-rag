@@ -32,6 +32,22 @@ _PLAINTEXT_EXTENSIONS = (
     ".jsx",
     ".tsx",
     ".css",
+    # Mainstream programming-language sources — all plain text, route through PlainTextExtractor.
+    ".java",
+    ".kt",
+    ".scala",
+    ".cs",
+    ".go",
+    ".rs",
+    ".rb",
+    ".php",
+    ".swift",
+    ".m",
+    ".mm",
+    ".lua",
+    ".pl",
+    ".sh",
+    ".dart",
 )
 
 

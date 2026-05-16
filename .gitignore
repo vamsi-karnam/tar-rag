@@ -71,3 +71,4 @@ examples/**/active_state.json
 
 # Local benchmark corpus — derivative of CPython, not redistributable
 /.claude
+docs/code-corpora-master

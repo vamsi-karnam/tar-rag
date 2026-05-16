@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "version": "98b9d6a08ef0a042",
+  "generated_at": "2026-05-16T19:51:55.493088+00:00",
+  "level_names": [
+    "language",
+    "project"
+  ],
+  "attempts": [
+    {
+      "attempt": 1,
+      "reason": "resolved_context",
+      "description": "All resolved levels: language + project",
+      "filter_keys": [
+        "language",
+        "project"
+      ],
+      "allow_broaden": true
+    },
+    {
+      "attempt": 2,
+      "reason": "language_only",
+      "description": "Fallback: language only",
+      "filter_keys": [
+        "language"
+      ],
+      "allow_broaden": true
+    },
+    {
+      "attempt": 3,
+      "reason": "global_fallback",
+      "description": "No filters — full corpus search",
+      "filter_keys": [],
+      "allow_broaden": false
+    }
+  ]
+}
