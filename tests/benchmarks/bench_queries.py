@@ -1,9 +1,9 @@
 """Canonical user-facing benchmark query set.
 
 This is the query set that the harness CLI runs by default — it
-matches the live-benchmark narrative in ``benchmark.md`` (CPython
+matches the live-benchmark narrative in ``benchmarks/benchmark.md`` (CPython
 documentation + selected stdlib source corpus). Users following the
-"Reproduction" section of ``benchmark.md`` should see the same eight
+"Reproduction" section of ``benchmarks/benchmark.md`` should see the same eight
 queries served against their vector store.
 
 The offline pytest benchmark uses a different, synthetic fixture set

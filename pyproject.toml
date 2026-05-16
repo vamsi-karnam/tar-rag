@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tar-rag"
-version = "0.1.0"
+version = "0.2.0"
 description = "Topology-Aware Retrieval for RAG — structure-guided vector search with progressive fallback"
-readme = "README_PYPI.md"
+readme = "pypi/README_PYPI.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
@@ -36,22 +36,11 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
-# Zero mandatory runtime dependencies.
-dependencies = []
-
-[project.optional-dependencies]
-# Vector store adapters
-openai   = ["openai>=1.0.0"]
-pinecone = ["pinecone-client>=3.0.0"]
-qdrant   = ["qdrant-client>=1.7.0"]
-chroma   = ["chromadb>=0.4.0"]
-
-# File extractors (beyond stdlib plaintext / json / csv / html)
-pdf      = ["pypdf>=5.4.0"]
-docx     = ["python-docx>=1.0.0"]
-
-# Bundle every adapter + extractor
-all = [
+# Turnkey install — every bundled adapter and extractor is pulled in by
+# default so `pip install tar-rag` works out of the box. Heavyweight or
+# environment-specific integrations (GPU stacks, enterprise connectors)
+# should be added under [project.optional-dependencies] as they appear.
+dependencies = [
     "openai>=1.0.0",
     "pinecone-client>=3.0.0",
     "qdrant-client>=1.7.0",
@@ -59,6 +48,17 @@ all = [
     "pypdf>=5.4.0",
     "python-docx>=1.0.0",
 ]
+
+[project.optional-dependencies]
+# Kept as no-op aliases so existing install instructions
+# (`pip install "tar-rag[openai]"`, `[all]`, etc.) keep working.
+openai   = []
+pinecone = []
+qdrant   = []
+chroma   = []
+pdf      = []
+docx     = []
+all      = []
 
 # Development / test environment
 dev = [
@@ -86,8 +86,8 @@ include = [
     "tar_rag",
     "tests",
     "examples",
+    "pypi/README_PYPI.md",
     "README.md",
-    "README_PYPI.md",
     "LICENSE",
     "CHANGELOG.md",
     "pyproject.toml",
@@ -96,11 +96,17 @@ exclude = [
     "**/__pycache__",
     "**/*.pyc",
     "IMPLEMENTATION_PLAN.md",
-    # docs/test_corpus/ is a local-only reduction of CPython used for
-    # the live benchmark — not redistributable via PyPI.
+    # benchmarks/ contains live benchmark docs and gitignored local
+    # corpora (CPython reduction, code-corpora-master). The corpora
+    # are derivative of upstream sources and are not redistributable;
+    # benchmark.md itself is accessible via the GitHub repo.
+    "benchmarks/**",
+    # Legacy path from before v0.2.0 — kept here as a safety net in
+    # case any branch still has files under docs/.
     "docs/**",
     # Local outputs from running tar-rag during development.
     "tar_rag_output/**",
+    "tar_rag_output_corpora/**",
     # Local builds.
     "dist/**",
     ".pytest_cache/**",

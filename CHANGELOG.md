@@ -9,6 +9,90 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 _No unreleased changes._
 
+## [0.2.0] - 2026-05-16
+
+This release rewrites the public-facing documentation for first-time readers,
+makes `pip install tar-rag` turnkey, and reshuffles the repo layout to keep
+each artifact category (library code, examples + how-to, benchmarks, PyPI
+packaging) in its own directory.
+
+### Changed
+- **Install is now turnkey.** `pip install tar-rag` pulls in every bundled
+  vector-store adapter (OpenAI, Pinecone, Qdrant, Chroma) and file extractor
+  (PDF, DOCX) by default. The `[openai]` / `[pinecone]` / `[qdrant]` /
+  `[chroma]` / `[pdf]` / `[docx]` / `[all]` extras are preserved as no-op
+  aliases so older install commands still resolve.
+- **`README.md` rewritten for first-time readers.** Quick, single-screen pitch
+  built around a "math instead of an LLM" framing and an ASCII heat-map of how
+  topology pre-filtering scores branches. The system architecture diagram is
+  now a three-step swim-lane (crawl → upload → query) showing how the user-
+  driven steps interconnect via the artifact files and the vector store. The
+  long-form quickstart, tuning tables, custom adapter sketch, async tables,
+  clarification flow, and full architecture diagram all moved to
+  `examples/how-to-guide.md`.
+- **`README_PYPI.md` aligned with the new README** and moved to `pypi/`. The
+  stale "Zero mandatory runtime dependencies" claim was removed (no longer
+  true after the turnkey install), the Features list was folded into the new
+  Description / Install / Use-case prose, and the demo query was switched to
+  the generic OAuth example for consistency with the GitHub README.
+- **Repo layout reshuffled.**
+  - `docs/` → `benchmarks/`. `benchmark.md` now lives at
+    `benchmarks/benchmark.md`.
+  - `how-to-guide.md` → `examples/how-to-guide.md`.
+  - `README_PYPI.md` → `pypi/README_PYPI.md` (referenced from
+    `pyproject.toml`'s `readme = "pypi/README_PYPI.md"`).
+  - `pyproject.toml` stays at the repo root (PEP 621 convention; keeps
+    `pip install -e .` and `hatch build` working unchanged).
+  - All cross-references (`README.md`, `README_PYPI.md`,
+    `examples/how-to-guide.md`, `tests/conftest.py`,
+    `tests/benchmarks/bench_queries.py`) updated to the new paths.
+- **`benchmarks/benchmark.md` rewritten to drop in-repo path mentions.** The
+  CPython and code-corpora-master reductions are now described as builds you
+  produce locally from the linked upstreams
+  (<https://github.com/python/cpython> and
+  <https://github.com/source-foundry/code-corpora>); the recommended local
+  path is `benchmarks/test_corpus/` and `benchmarks/code-corpora-master/`
+  (both gitignored).
+- **CI workflow** (`ci.yml`) install step simplified to `pip install -e ".[dev]"`
+  — the `[openai]` extra is now a no-op alias, so the explicit request is
+  redundant.
+- **README.md "Project layout"** section expanded to show the full top-level
+  repo tree (library, examples, benchmarks, pypi, tests, workflows, root
+  files) instead of just the `tar_rag/` package.
+- **README.md** gained a "Mixed-depth corpora" subsection under Scalability
+  documenting that `DirectoryHierarchyExtractor`,
+  `CorpusMapBuilder._build_tree`, and `SearchPlanBuilder.resolve` handle
+  asymmetric trees end-to-end (a single corpus with branches at differing
+  depths) — verified by the existing
+  `test_tree_attaches_partial_depth_docs_at_correct_level` test.
+
+### Added
+- **`examples/how-to-guide.md`** — the dedicated developer / integrator guide
+  carved out of the old README. Sections: prerequisites, three-step
+  quickstart (crawl / upload / query), tuning (`confidence_config.json`,
+  orchestrator args, `search_plan_template.json`), custom vector-store
+  adapter, custom extractors, async usage, multi-turn clarification flow,
+  and the full per-attempt architecture diagram.
+- **`pypi/` directory** — currently contains the long-description
+  (`README_PYPI.md`) shown on the PyPI project page. Reserved for any
+  future PyPI-specific packaging artifacts.
+- **`benchmarks/` directory** — replaces `docs/`. Contains the live
+  `benchmark.md` and is the documented home for the gitignored
+  `test_corpus/` and `code-corpora-master/` local reductions.
+
+### Removed
+- **`docs/test_corpus/` removed from git tracking** (102 CPython-derivative
+  `.rst` / `.py` files). The directory is now gitignored under its new
+  path (`benchmarks/test_corpus/`) so local reductions stay on disk for
+  benchmark runs but are never committed.
+- **Old root-level `benchmark.md`, `README_PYPI.md`, `how-to-guide.md`**
+  paths — see Changed for new locations.
+
+### Notes
+- Version bumped to `0.2.0`. The Trusted-Publishing tag-push workflow
+  (`publish.yml`) requires a `v0.2.0` git tag to trigger
+  TestPyPI → PyPI promotion.
+
 ## [0.1.0] - 2026-05-13
 
 Initial public release. Apache-2.0 licensed.
@@ -88,5 +172,6 @@ Initial public release. Apache-2.0 licensed.
 - `IMPLEMENTATION_PLAN.md`, `tar_rag_output/`, `dist/`, and
   `.pytest_cache/` explicitly excluded from the sdist build.
 
+[0.2.0]: https://github.com/vamsi-karnam/tar-rag/releases/tag/v0.2.0
 [0.1.0]: https://github.com/vamsi-karnam/tar-rag/releases/tag/v0.1.0
-[Unreleased]: https://github.com/vamsi-karnam/tar-rag/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/vamsi-karnam/tar-rag/compare/v0.2.0...HEAD

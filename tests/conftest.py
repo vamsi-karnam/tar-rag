@@ -1,7 +1,7 @@
 """Shared pytest fixtures and helpers.
 
 The synthetic offline corpus mirrors the topology used by the live
-benchmark in ``benchmark.md``: a 2-level ``[kind, topic]`` hierarchy
+benchmark in ``benchmarks/benchmark.md``: a 2-level ``[kind, topic]`` hierarchy
 loosely modelled on CPython documentation + selected stdlib source.
 This keeps offline tests, the offline benchmark, and the live
 benchmark exercising the same shape of corpus.

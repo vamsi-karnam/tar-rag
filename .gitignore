@@ -69,7 +69,15 @@ examples/**/active_state.json
 /tar_rag_output/
 /scratch_output/
 
-# Local benchmark corpus — derivative of CPython, not redistributable
+# Local benchmark corpora — derivative content, not redistributable.
+# These are rebuilt locally from upstream sources documented in
+# benchmarks/benchmark.md and must never be committed.
 /.claude
-docs/code-corpora-master
+benchmarks/test_corpus/
+benchmarks/code-corpora-master/
+# Legacy paths from before v0.2.0 — kept as a safety net for older branches.
+docs/test_corpus/
+docs/code-corpora-master/
 tar_rag_output_corpora
+tar_rag_output*
+tar_rag_discussion.md
