@@ -3,6 +3,10 @@
 **Topology-Aware Retrieval for RAG** — a vector-store-agnostic Python library
 that adds structural navigation to any RAG pipeline.
 
+## The idea
+
+A corpus's existing topology is a zero-cost structural prior that can potentially replace an LLM router for retrieval, with deterministic latency and bounded hallucination surface.
+
 ## Description
 
 Most RAG pipelines do flat top-K semantic search — every query scans the
