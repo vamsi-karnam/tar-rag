@@ -17,6 +17,7 @@ lexically against the query, and runs ANN search scoped to the hottest
 branch first — broadening only if confidence isn't high enough.
 
 ```
+# Example
 query: "How does the OAuth token refresh flow work?"
 
   ┌────────────────────────────────────────────────────────────┐
