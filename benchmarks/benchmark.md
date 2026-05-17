@@ -1517,3 +1517,5 @@ care, and the structural filter doesn't either. The thing that
 any other text record; a PDF that fails extraction becomes a
 hash-only zero-content record that no threshold tuning can
 recover.
+
+*Net conclusion across all three benchmarks: the structural filter and the medium_min threshold are independent levers — the filter does the heavy lifting on semantically distinct corpora (where the threshold knob is idle) e.g. product guides / technical documentation, and the threshold tune does the heavy lifting on corpora with semantic continuity and ambiguity (where the filter alone leaves false positives in the medium band) e.g. code files / API documentation — so the right calibration choice is governed by the knowledge register of the corpus, not by tar-rag's shipped defaults.*
