@@ -1,7 +1,7 @@
 # tar-rag — How-to guide
 
 This guide is for developers integrating `tar-rag` into a real pipeline.
-For the high-level pitch, the heat-map metaphor, and the use-case list,
+For the high-level pitch, and the use-case list,
 see [`README.md`](../README.md). For measured benchmark numbers, see
 [`benchmarks/benchmark.md`](../benchmarks/benchmark.md).
 
