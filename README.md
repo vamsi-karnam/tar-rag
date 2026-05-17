@@ -54,75 +54,6 @@ isn't high enough — exiting as soon as a confident answer is found. See [examp
 9. Filesystem-organized corpora
 10. Code / documentation RAG
 
----
-
-## Install
-
-```bash
-pip install tar-rag
-```
-
-That's it. The default install includes every bundled vector-store adapter
-(OpenAI, Pinecone, Qdrant, Chroma) and every file extractor (PDF, DOCX,
-HTML, JSON, CSV, plaintext / source code) — `tar-rag` works out of the box
-with whichever combination you reach for.
-
-```bash
-# Development install
-pip install "tar-rag[dev]"
-```
-
----
-
-## High-level example
-
-Suppose your corpus is laid out as `service/module/topic`:
-
-```
-/corpus
-  /auth
-    /oauth
-    /sessions
-  /billing
-    /invoices
-    /refunds
-```
-
-A user asks: *"How does the OAuth token refresh flow work?"*
-
-A standard retriever embeds the query and runs ANN over **all** chunks —
-billing included. 
-
-However `tar-rag` does the following:
-
-1. Scores branches lexically against the query → `auth=high, oauth=highest,
-   billing=low` (the heat map above).
-2. Filters the ANN search to `service=auth AND module=oauth` first.
-3. If the top result clears the confidence threshold, returns. Otherwise
-   broadens to just `service=auth`, then global, until something passes.
-4. If nothing clears the threshold, returns **zero chunks** rather than
-   forwarding weak ones to your LLM — that's the token gate.
-
-```
-# Example
-query: "How does the OAuth token refresh flow work?"
-
-  ┌────────────────────────────────────────────────────────────┐
-  │ auth/oauth        ████████████   0.92   ← start ANN here   │
-  │ auth/sessions     █████          0.41                      │
-  │ billing/refunds   █              0.08                      │
-  │ billing/invoices                 0.02                      │
-  └────────────────────────────────────────────────────────────┘
-                          │
-                          ▼   scoped ANN; broaden only if needed
-```
-
-The vector store and embedding model are unchanged. The only addition is a
-metadata filter derived deterministically from the query.
-
-> See [`examples/how-to-guide.md`](examples/how-to-guide.md) for the quickstart
-> and full Python API. See [`benchmarks/benchmark.md`](benchmarks/benchmark.md)
-> for measured comparisons against an unfiltered baseline on real corpora.
 
 ---
 
@@ -204,6 +135,71 @@ after each crawl (or whenever your corpus changes). The query step runs
 per user request and is the only one in the hot path. The full diagram
 with the parallel fallback chain and per-attempt confidence scoring
 lives in [`examples/how-to-guide.md`](examples/how-to-guide.md#architecture-detail).
+
+---
+
+## Install
+
+```bash
+pip install tar-rag
+```
+
+That's it. The default install includes every bundled vector-store adapter
+(OpenAI, Pinecone, Qdrant, Chroma) and every file extractor (PDF, DOCX,
+HTML, JSON, CSV, plaintext / source code) — `tar-rag` works out of the box
+with whichever combination you reach for.
+
+---
+
+## High-level example
+
+Suppose your corpus is laid out as `service/module/topic`:
+
+```
+/corpus
+  /auth
+    /oauth
+    /sessions
+  /billing
+    /invoices
+    /refunds
+```
+
+A user asks: *"How does the OAuth token refresh flow work?"*
+
+A standard retriever embeds the query and runs ANN over **all** chunks —
+billing included. 
+
+However `tar-rag` does the following:
+
+1. Scores branches lexically against the query → `auth=high, oauth=highest,
+   billing=low` (the heat map above).
+2. Filters the ANN search to `service=auth AND module=oauth` first.
+3. If the top result clears the confidence threshold, returns. Otherwise
+   broadens to just `service=auth`, then global, until something passes.
+4. If nothing clears the threshold, returns **zero chunks** rather than
+   forwarding weak ones to your LLM — that's the token gate.
+
+```
+# Example
+query: "How does the OAuth token refresh flow work?"
+
+  ┌────────────────────────────────────────────────────────────┐
+  │ auth/oauth        ████████████   0.92   ← start ANN here   │
+  │ auth/sessions     █████          0.41                      │
+  │ billing/refunds   █              0.08                      │
+  │ billing/invoices                 0.02                      │
+  └────────────────────────────────────────────────────────────┘
+                          │
+                          ▼   scoped ANN; broaden only if needed
+```
+
+The vector store and embedding model are unchanged. The only addition is a
+metadata filter derived deterministically from the query.
+
+> See [`examples/how-to-guide.md`](examples/how-to-guide.md) for the quickstart
+> and full Python API. See [`benchmarks/benchmark.md`](benchmarks/benchmark.md)
+> for measured comparisons against an unfiltered baseline on real corpora.
 
 ---
 
