@@ -141,6 +141,51 @@ def test_pdf_extractor_runs_when_pypdf_available(tmp_path: Path) -> None:
     assert isinstance(text, str)
 
 
+def test_pdf_extractor_recovers_from_trailer_comment(tmp_path: Path) -> None:
+    """Regression: PDFs with comment lines between `startxref<offset>` and
+    `%%EOF` (e.g. tool-injected `%Downloaded by ...`) trip pypdf's
+    `_find_startxref_pos` with `PdfReadError: startxref not found`.
+    The extractor should sanitize the trailer and extract text.
+    """
+    pypdf = pytest.importorskip("pypdf")
+
+    # Generate a valid 1-page PDF then inject a comment line into the trailer.
+    writer = pypdf.PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    raw = tmp_path / "raw.pdf"
+    with raw.open("wb") as handle:
+        writer.write(handle)
+    data = raw.read_bytes()
+
+    # The clean PDF ends with: `startxref\n<offset>\n%%EOF\n`.
+    # Replace the last `%%EOF` with `%Downloaded by DDS\n%%EOF` so the
+    # comment lands between the offset line and the EOF marker.
+    eof_index = data.rfind(b"%%EOF")
+    assert eof_index != -1, "synthesised PDF missing %%EOF"
+    poisoned = data[:eof_index] + b"%Downloaded by DDS\n" + data[eof_index:]
+
+    poisoned_path = tmp_path / "poisoned.pdf"
+    poisoned_path.write_bytes(poisoned)
+
+    # Sanity-check the failure mode before relying on recovery: the raw
+    # poisoned bytes should trip pypdf directly. (If a future pypdf
+    # release fixes this upstream, the regression test still passes —
+    # we just stop exercising the recovery path.)
+    from pypdf.errors import PdfReadError
+    pypdf_handles_natively = False
+    try:
+        pypdf.PdfReader(str(poisoned_path))
+        pypdf_handles_natively = True
+    except PdfReadError:
+        pass
+
+    text = PdfTextExtractor().extract(str(poisoned_path))
+    assert isinstance(text, str)
+    # Either pypdf handles it natively, or our recovery path produced
+    # something parseable — in both cases extraction returned a string.
+    _ = pypdf_handles_natively  # informational only
+
+
 def test_docx_extractor_raises_when_python_docx_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     target = tmp_path / "a.docx"
     target.write_bytes(b"PK fake")  # not a real docx

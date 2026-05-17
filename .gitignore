@@ -75,6 +75,7 @@ examples/**/active_state.json
 /.claude
 benchmarks/test_corpus/
 benchmarks/code-corpora-master/
+benchmarks/hardware-manuals/
 # Legacy paths from before v0.2.0 — kept as a safety net for older branches.
 docs/test_corpus/
 docs/code-corpora-master/
