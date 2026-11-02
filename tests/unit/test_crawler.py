@@ -103,15 +103,15 @@ def test_crawler_alias_sidecar_extends_aliases(tmp_path: Path) -> None:
     )
     sidecar = tmp_path / "instruments" / "acme" / "_aliases.json"
     sidecar.write_text(
-        json.dumps({"model_x.txt": ["model_x", "MkIII", "DWR-MkIII"]}),
+        json.dumps({"model_x.txt": ["model_x", "MkTwo", "ACME-MkTwo"]}),
         encoding="utf-8",
     )
     docs = DirectoryCrawler(tmp_path, ["category", "product"]).crawl()
     assert len(docs) == 1
     doc = docs[0]
     assert "model_x" in doc.aliases
-    assert "mkiii" in doc.aliases
-    assert "dwr-mkiii" in doc.aliases
+    assert "mktwo" in doc.aliases
+    assert "acme-mktwo" in doc.aliases
 
 
 def test_crawler_doc_ids_are_stable(tmp_path: Path) -> None:

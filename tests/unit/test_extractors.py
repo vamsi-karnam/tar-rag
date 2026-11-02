@@ -54,11 +54,11 @@ def test_csv_renders_with_header(tmp_path: Path) -> None:
     with target.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(["name", "category"])
-        writer.writerow(["DWR", "instruments"])
-        writer.writerow(["WM", "software"])
+        writer.writerow(["Widget", "instruments"])
+        writer.writerow(["Gadget", "software"])
     text = CsvTextExtractor().extract(str(target))
     assert "row 1" in text
-    assert "name: DWR" in text
+    assert "name: Widget" in text
     assert "category: software" in text
 
 
