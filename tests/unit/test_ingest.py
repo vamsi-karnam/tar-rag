@@ -566,3 +566,155 @@ def test_failing_file_is_recorded_and_the_run_continues(tmp_path: Path) -> None:
     summary = ingest_documents(records, tmp_path / "out", level_names=[], corpus_version="v1")
     assert list(summary.failed) == ["gone.md"]
     assert summary.documents == 1
+
+
+class FixedAdapter(AbstractVectorStoreAdapter):
+    def __init__(self, results: list[SearchResult]) -> None:
+        self.results = results
+
+    def search(self, query: str, filters: dict[str, Any] | None, top_k: int) -> list[SearchResult]:
+        return list(self.results)
+
+
+def _crawl_and_ingest(root: Path, output: Path) -> None:
+    assert cli_main(["crawl", str(root), "--levels", "category,product", "--output", str(output), "--ingest", "--quiet"]) == 0
+
+
+def _readable(output: Path) -> tuple[int, int]:
+    store = UnitStore.load(output)
+    assert store is not None
+    return len(store.rows), sum(1 for unit_id in store.order if store.text(unit_id))
+
+
+def test_store_hit_missing_from_the_manifest_keeps_its_own_text(corpus: tuple[Path, Path]) -> None:
+    root, output = corpus
+    (root / "manuals" / "alpha" / "extra.md").write_text("# Extra\n\nHarbour contact details.\n", encoding="utf-8")
+    _crawl_and_ingest(root, output)
+    gone = next(
+        row
+        for row in json.loads((output / "unit_manifest.json").read_text(encoding="utf-8"))["units"]
+        if row["metadata"]["source_path"].endswith("extra.md")
+    )
+    (root / "manuals" / "alpha" / "extra.md").unlink()
+    _crawl_and_ingest(root, output)
+    hit = SearchResult(0.9, "Harbour contact details.", {**gone["metadata"], "unit_source": "ocr"})
+    tar = TarRag.from_artifacts(output, adapter=FixedAdapter([hit]))
+    bundle = tar.context_for(tar.search("zzqq nothing else matches"))
+    assert "Harbour contact details." in bundle.text
+    assert bundle.has_ocr
+
+
+def test_ingest_output_from_another_corpus_version_is_not_served(corpus: tuple[Path, Path]) -> None:
+    root, output = corpus
+    (root / "manuals" / "alpha" / "guide.md").write_text("# Guide\n\nNew words.\n", encoding="utf-8")
+    assert cli_main(["crawl", str(root), "--levels", "category,product", "--output", str(output), "--quiet"]) == 0
+    with pytest.warns(UserWarning, match="another corpus version"):
+        tar = TarRag.from_artifacts(output, adapter=RecordingAdapter())
+    assert tar.units is None and tar.identifiers is None and tar.section_router is None
+    assert tar.orchestrator.top_k == 6
+    outcome = tar.search("what does WDT_LOAD_VALUE do")
+    assert outcome.reason != "identifier_match"
+    assert not any("sets the timeout" in result.snippet for result in outcome.results)
+
+
+def test_matching_versions_load_with_no_warning(corpus: tuple[Path, Path], recwarn: pytest.WarningsRecorder) -> None:
+    _, output = corpus
+    assert TarRag.from_artifacts(output, adapter=RecordingAdapter()).units is not None
+    assert not [item for item in recwarn if "corpus version" in str(item.message)]
+
+
+@pytest.mark.parametrize("failure", [KeyboardInterrupt, ValueError])
+def test_interrupted_ingest_leaves_the_earlier_output_whole(
+    corpus: tuple[Path, Path], failure: type[BaseException]
+) -> None:
+    root, output = corpus
+    before = _readable(output)
+    assert before[0] > 0 and before[0] == before[1]
+    documents = DirectoryCrawler(root, level_names=["category", "product"]).crawl()
+
+    def stop(_record: Any) -> None:
+        raise failure
+
+    with pytest.raises(failure):
+        ingest_documents(documents, output, level_names=["category", "product"], corpus_version="v2", on_document=stop)
+    assert _readable(output) == before
+    assert len(list((output / "document_maps").glob("*.json"))) == 1
+    assert [path.name for path in output.iterdir() if path.name.endswith(".tmp")] == []
+
+
+def test_failure_during_the_swap_leaves_no_mix_of_old_and_new(
+    corpus: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, output = corpus
+    documents = DirectoryCrawler(root, level_names=["category", "product"]).crawl()
+    real_replace = Path.replace
+
+    def fail_on_units(self: Path, target: Any) -> Any:
+        if Path(target).name == "units" and Path(target).parent == output:
+            raise OSError("locked")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_on_units)
+    with pytest.raises(OSError, match="locked"):
+        ingest_documents(documents, output, level_names=["category", "product"], corpus_version="v2")
+    monkeypatch.undo()
+    tar = TarRag.from_artifacts(output, adapter=RecordingAdapter())
+    assert tar.units is None and tar.identifiers is None and tar.section_router is None
+    assert tar.search("what does WDT_LOAD_VALUE do").reason != "identifier_match"
+
+
+def test_exact_spelling_ranks_above_a_look_alike_name() -> None:
+    index = IdentifierIndex.build(
+        [("io", "Inputs", "REG_IO controls the input pins"), ("ten", "Timer", "REG_10 holds the period")]
+    )
+    assert index.lookup("What does REG_10 hold?") == ["ten", "io"]
+    assert index.lookup("What does REG_IO do?") == ["io", "ten"]
+
+
+def _guide_corpus(tmp_path: Path, text: str) -> Path:
+    root = tmp_path / "words" / "manuals" / "alpha"
+    root.mkdir(parents=True)
+    (root / "guide.md").write_text(text, encoding="utf-8")
+    output = tmp_path / "words_out"
+    _crawl_and_ingest(tmp_path / "words", output)
+    return output
+
+
+def test_look_alike_name_does_not_lead_a_query_for_the_exact_one(tmp_path: Path) -> None:
+    output = _guide_corpus(tmp_path, "# Guide\n\n## Inputs\n\nREG_IO controls pins.\n\n## Timer\n\nREG_10 holds the period.\n")
+    tar = TarRag.from_artifacts(output, adapter=RecordingAdapter(score=0.1))
+    outcome = tar.search("What does REG_10 hold?")
+    assert outcome.reason == "identifier_match" and outcome.confidence == "high"
+    assert "holds the period" in outcome.results[0].snippet
+
+
+def test_misread_only_match_is_evidence_but_does_not_force_high(tmp_path: Path) -> None:
+    output = _guide_corpus(tmp_path, "# Guide\n\n## Scan\n\n1RQ_ENABLE turns on the interrupt.\n")
+    tar = TarRag.from_artifacts(output, adapter=RecordingAdapter(score=0.1))
+    outcome = tar.search("What does IRQ_ENABLE do?")
+    assert outcome.reason == "identifier_match"
+    assert "turns on the interrupt" in outcome.results[0].snippet
+    assert not outcome.should_answer
+    assert "turns on the interrupt" in tar.context_for(outcome).text
+
+
+def test_name_held_by_many_units_does_not_force_high(tmp_path: Path) -> None:
+    sections = "".join(f"## Part {n}\n\nStored as UTF-8 in part {n}.\n\n" for n in range(1, 9))
+    output = _guide_corpus(tmp_path, f"# Guide\n\n{sections}")
+    tar = TarRag.from_artifacts(output, adapter=RecordingAdapter(score=0.1))
+    outcome = tar.search("What is the capital of France in UTF-8?")
+    assert outcome.confidence != "high"
+    assert not outcome.should_answer
+    assert outcome.top_score < 1.0
+
+
+def test_exact_unit_outside_the_pin_does_not_force_high(tmp_path: Path) -> None:
+    for product, text in (("alpha", "REG_10 holds the period.\n"), ("beta", "REG_IO controls pins.\n")):
+        root = tmp_path / "pins" / "manuals" / product
+        root.mkdir(parents=True)
+        (root / "guide.md").write_text(f"# Guide\n\n{text}", encoding="utf-8")
+    output = tmp_path / "pins_out"
+    _crawl_and_ingest(tmp_path / "pins", output)
+    tar = TarRag.from_artifacts(output, adapter=RecordingAdapter(score=0.1))
+    outcome = tar.search("What does REG_10 hold?", explicit_levels={"product": "beta"})
+    assert outcome.confidence != "high"

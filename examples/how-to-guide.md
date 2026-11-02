@@ -187,8 +187,15 @@ tar-rag crawl ./corpus \
 | `--workers` | up to `4` | Worker processes for reading PDFs. |
 
 The output folder must be outside the corpus. A rerun replaces what an earlier
-run wrote, and a folder that holds other files is refused. A file that fails is
-listed in the summary under `failed`, and the run continues.
+run wrote, and a folder that holds other files is refused. The new output is built
+aside and swapped in at the end, so a run that stops early leaves the earlier output
+whole. A file that fails is listed in the summary under `failed`, and the run
+continues.
+
+A plain crawl into the same folder does not refresh the ingest artifacts. If the
+corpus changed, `from_artifacts` warns, ignores them and stays at folder level until
+you run `--ingest` again. After a re-ingest, resync your store: a stored unit that
+the manifest no longer lists still reaches the LLM with its stored text.
 
 From Python, keep the call under a main guard, because PDFs are read in worker
 processes:
@@ -285,10 +292,12 @@ adds evidence, and takes nothing away:
 |---|---|---|
 | Section route | Query words cover at least half the weight of a section title, and one section wins clearly | Adds a search filtered to that section. `reason` becomes `section_route`. |
 | Word matches | Every query | A BM25 index over the units adds up to 3 units, or all of a short document. Their score is 0, so they cannot raise confidence. |
-| Exact names | The query holds a name from the identifier index | Puts those units first. `reason` becomes `identifier_match` and confidence becomes `high`. |
+| Exact names | The query holds a name from the identifier index | Puts those units first. `reason` becomes `identifier_match`. Confidence becomes `high` when at most 6 units hold the query's spelling. Otherwise it stays as the search set it, at `low` or above. |
 
 Lookup compares names with look-alike characters folded (`I` and `L` to `1`, `O` to
-`0`), so an OCR misread can still match. Pinned `explicit_levels` limit all three.
+`0`), so an OCR misread can still match. Units with the query's own spelling rank
+first, so `REG_10` comes before a look-alike `REG_IO`. Pinned `explicit_levels` limit
+all three.
 
 Then build the context:
 

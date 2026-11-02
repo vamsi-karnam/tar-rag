@@ -295,7 +295,8 @@ away:
 1. **Section route.** Section titles are scored against the query, with each word weighted by its
    rarity. A strong match adds a search filtered to that section.
 2. **Word matches.** A BM25 index over the units adds what meaning-based search misses.
-3. **Exact names.** A name in the identifier index puts its units first.
+3. **Exact names.** A name in the identifier index puts its units first, with the query's own
+   spelling ahead of look-alikes.
 
 `result.reason` tells you which ran last: `section_route`, `identifier_match`, or a folder-level reason.
 
@@ -312,8 +313,14 @@ in the OCR text. The trees are deterministic, with no LLM at any step.
 - The first query in a process also builds the word index in memory. That query took 3 to 8 seconds
   in total at about 5,000 units in our test. Later queries pay nothing, so run one query at startup
   in a long-running service.
-- An exact name sets confidence to `high`, so the gate no longer filters that query. Your answer
-  prompt must let the LLM say it does not know.
+- An exact name sets confidence to `high` when at most 6 units hold that spelling, so the gate no
+  longer filters that query. A name used more widely, or found only as a look-alike, still leads the
+  results but keeps the search's confidence, at `low` or above. Your answer prompt must let the LLM
+  say it does not know.
+- Keep the ingest artifacts and the corpus map from the same run. On a version mismatch,
+  `from_artifacts` warns, ignores the ingest artifacts and stays at folder level.
+- Resync your store after a re-ingest. A stored unit that the manifest no longer lists still reaches
+  the LLM with its stored text.
 - Ingest is slower than a plain crawl. Our 261-PDF test took about 9 minutes, and uploading one file
   per unit took about 25 minutes.
 

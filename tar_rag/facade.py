@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -135,12 +136,22 @@ class TarRag:
         # Written by ``tar-rag crawl --ingest``. Without them, routing stays at folder level.
         # Units are smaller than file chunks, so more of them are fetched.
         units = UnitStore.load(base)
+        corpus_version = str(corpus_map.get("version") or "")
+        if units is not None and units.version != corpus_version:
+            warnings.warn(
+                f"Ignoring the ingest artifacts in {base}: they describe another corpus version "
+                f"({units.version}, and the corpus map is {corpus_version}). Their text may be out "
+                "of date, so routing stays at folder level. Run `tar-rag crawl --ingest` again.",
+                stacklevel=2,
+            )
+            units = None
         if top_k is None:
             top_k = _TOP_K_WITH_UNITS if units is not None else _TOP_K_FILES
+        # The unit manifest is the last file an ingest writes, so the rest counts only with it.
         identifier_path = base / IDENTIFIER_INDEX_FILENAME
         identifiers = (
             IdentifierIndex.from_dict(json.loads(identifier_path.read_text(encoding="utf-8")))
-            if identifier_path.exists()
+            if units is not None and identifier_path.exists()
             else None
         )
 
@@ -153,7 +164,7 @@ class TarRag:
             top_k=top_k,
             parallel_fallback=parallel_fallback,
             logger=logger,
-            section_router=SectionRouter.load(base),
+            section_router=SectionRouter.load(base) if units is not None else None,
             identifiers=identifiers,
             units=units,
         )
@@ -262,10 +273,13 @@ class TarRag:
 
     def _named_results(
         self, query: str, explicit_levels: dict[str, str | None] | None = None
-    ) -> list[SearchResult]:
+    ) -> tuple[list[SearchResult], bool]:
+        """Return the units for names in ``query``, and whether in-scope units settle it."""
         if self.identifiers is None:
-            return []
-        return self._unit_results(self.identifiers.lookup(query), explicit_levels)
+            return [], False
+        match = self.identifiers.match(query)
+        found = self._unit_results(match.units, explicit_levels)
+        return found, any(result.metadata.get("unit_id") in match.decisive for result in found)
 
     def _lexical_results(
         self, query: str, explicit_levels: dict[str, str | None] | None = None
@@ -289,7 +303,7 @@ class TarRag:
         explicit_levels: dict[str, str | None] | None = None,
     ) -> RetrievalOutcome:
         """Add exact, routed and lexical evidence to the normal outcome. Nothing is taken away."""
-        named = self._named_results(query, explicit_levels)
+        named, decisive = self._named_results(query, explicit_levels)
         if routed:
             outcome.results = blend_results(routed, outcome.results)
             ordered = sorted(outcome.results, key=lambda result: result.score, reverse=True)
@@ -302,9 +316,13 @@ class TarRag:
         if named:
             outcome.results = blend_results(named, [], outcome.results)
             outcome.reason = "identifier_match"
+            outcome.executed = True
+            if outcome.confidence == "none":
+                # Good enough to reach the LLM, which can still decline.
+                outcome.confidence = "low"
+        if decisive:
             outcome.confidence = "high"
             outcome.top_score = 1.0
-            outcome.executed = True
         elif attach_clarification:
             self._attach_clarification(context, outcome)
         return outcome

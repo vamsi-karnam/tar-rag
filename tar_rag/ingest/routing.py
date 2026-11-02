@@ -151,8 +151,9 @@ def blend_results(*groups: list[SearchResult]) -> list[SearchResult]:
 class UnitStore:
     """Reads unit metadata and text from the ingest artifacts."""
 
-    def __init__(self, output_dir: Path | str, rows: list[dict[str, Any]]) -> None:
+    def __init__(self, output_dir: Path | str, rows: list[dict[str, Any]], version: str = "") -> None:
         self.base = Path(output_dir)
+        self.version = version
         self.rows = {str(row["unit_id"]): row for row in rows}
         self.order = [str(row["unit_id"]) for row in rows]
         self.position = {unit_id: index for index, unit_id in enumerate(self.order)}
@@ -163,7 +164,7 @@ class UnitStore:
         if not path.is_file():
             return None
         payload = json.loads(path.read_text(encoding="utf-8"))
-        return cls(output_dir, list(payload.get("units") or []))
+        return cls(output_dir, list(payload.get("units") or []), str(payload.get("version") or ""))
 
     def text(self, unit_id: str) -> str | None:
         row = self.rows.get(unit_id)
@@ -365,13 +366,14 @@ def assemble_context(
     bundle.tokens = context.tokens
     bundle.skipped = context.skipped
     bundle.unit_ids = [unit_id for unit_id, _, _ in context.taken if unit_id]
-    bundle.has_ocr = any(
-        (units.rows[unit_id].get("metadata") or {}).get("unit_source") == "ocr"
-        for unit_id in bundle.unit_ids
-    ) if units is not None else any(
-        result is not None and result.metadata.get("unit_source") == "ocr"
-        for _, _, result in context.taken
-    )
+
+    def from_ocr(unit_id: str, result: SearchResult | None) -> bool:
+        # A store can hold a unit the manifest no longer lists, so its own metadata counts too.
+        row = units.rows.get(unit_id) if units is not None else None
+        metadata = (row.get("metadata") if row else None) or (result.metadata if result else {})
+        return bool(metadata.get("unit_source") == "ocr")
+
+    bundle.has_ocr = any(from_ocr(unit_id, result) for unit_id, _, result in context.taken)
     bundle.text = context.render()
     return bundle
 

@@ -34,6 +34,7 @@ UNITS_DIRNAME = "units"
 UNIT_MANIFEST_FILENAME = "unit_manifest.json"
 IDENTIFIER_INDEX_FILENAME = "identifier_index.json"
 _OWN_MARKER = ".tar_rag_ingest"
+_STAGING_DIRNAME = ".tar_rag_ingest.tmp"
 _SCHEMA_VERSION = "1.0"
 
 logger = logging.getLogger("tar_rag.ingest")
@@ -86,6 +87,24 @@ def _document_map(
     }
 
 
+def _publish(staging: Path, base: Path) -> None:
+    """Swap the staged output in.
+
+    The manifest goes first and returns last, so a reader finds the old output,
+    the new output, or a folder-level corpus, and never a mix of two runs.
+    """
+    (base / UNIT_MANIFEST_FILENAME).unlink(missing_ok=True)
+    (base / IDENTIFIER_INDEX_FILENAME).unlink(missing_ok=True)
+    retired = staging / "retired"
+    retired.mkdir()
+    for name in (DOCUMENT_MAPS_DIRNAME, UNITS_DIRNAME):
+        if (base / name).exists():
+            (base / name).replace(retired / name)
+        (staging / name).replace(base / name)
+    (staging / IDENTIFIER_INDEX_FILENAME).replace(base / IDENTIFIER_INDEX_FILENAME)
+    (staging / UNIT_MANIFEST_FILENAME).replace(base / UNIT_MANIFEST_FILENAME)
+
+
 def ingest_documents(
     documents: Iterable[DocumentRecord],
     output_dir: Path | str,
@@ -102,12 +121,14 @@ def ingest_documents(
     A file that fails is recorded in ``IngestSummary.failed`` and the run
     continues. Output from an earlier run in ``output_dir`` is replaced. A folder
     that an earlier run did not create is refused, so user files are never removed.
+
+    The new output is built aside and swapped in at the end, so a run that stops
+    early leaves the earlier output whole.
     """
     base = Path(output_dir)
-    maps_dir = base / DOCUMENT_MAPS_DIRNAME
-    units_dir = base / UNITS_DIRNAME
     marker = base / _OWN_MARKER
-    for folder in (maps_dir, units_dir):
+    for name in (DOCUMENT_MAPS_DIRNAME, UNITS_DIRNAME):
+        folder = base / name
         if folder.exists() and any(folder.iterdir()) and not marker.exists():
             raise TarRagError(
                 f"{folder} already holds files that tar-rag did not write. "
@@ -115,78 +136,84 @@ def ingest_documents(
             )
     base.mkdir(parents=True, exist_ok=True)
     marker.write_text("Written by tar-rag ingest. Its output folders here may be replaced.\n", encoding="utf-8")
-    for folder in (maps_dir, units_dir):
-        if folder.exists():
-            shutil.rmtree(folder)
-        folder.mkdir()
+    staging = base / _STAGING_DIRNAME
+    shutil.rmtree(staging, ignore_errors=True)  # left behind by a run that was killed
+    maps_dir = staging / DOCUMENT_MAPS_DIRNAME
+    units_dir = staging / UNITS_DIRNAME
+    maps_dir.mkdir(parents=True)
+    units_dir.mkdir()
 
     summary = IngestSummary()
     rows: list[dict[str, Any]] = []
     index_rows: list[tuple[str, str, str]] = []
-    for record in documents:
-        if on_document is not None:
-            on_document(record)
-        try:
-            document = load_document(record.local_path, pdf_extractor=pdf_extractor)
-            tree = build_document_tree(document)
-            units = build_units(
-                document, tree, title=record.filename, max_tokens=max_tokens
-            )
-        except Exception as exc:
-            logger.warning("Ingest failed on %s: %s", record.relative_path, exc)
-            summary.failed[record.relative_path] = f"{type(exc).__name__}: {exc}"
-            continue
+    try:
+        for record in documents:
+            if on_document is not None:
+                on_document(record)
+            try:
+                document = load_document(record.local_path, pdf_extractor=pdf_extractor)
+                tree = build_document_tree(document)
+                units = build_units(
+                    document, tree, title=record.filename, max_tokens=max_tokens
+                )
+            except Exception as exc:
+                logger.warning("Ingest failed on %s: %s", record.relative_path, exc)
+                summary.failed[record.relative_path] = f"{type(exc).__name__}: {exc}"
+                continue
 
-        summary.documents += 1
-        summary.units += len(units)
-        summary.ocr_pages += len(document.report.ocr_pages)
-        summary.needs_ocr_pages += len(document.report.needs_ocr_pages)
-        (maps_dir / f"{record.doc_id}.json").write_text(
-            json.dumps(_document_map(record, document, tree, units), indent=1, ensure_ascii=False),
+            summary.documents += 1
+            summary.units += len(units)
+            summary.ocr_pages += len(document.report.ocr_pages)
+            summary.needs_ocr_pages += len(document.report.needs_ocr_pages)
+            (maps_dir / f"{record.doc_id}.json").write_text(
+                json.dumps(_document_map(record, document, tree, units), indent=1, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            folder = units_dir / record.doc_id
+            folder.mkdir()
+            levels = {name: value for name in level_names if (value := record.levels.get(name)) is not None}
+            for position, unit in enumerate(units, start=1):
+                unit_id = f"{record.doc_id}:{unit.unit_id}"
+                relative = f"{UNITS_DIRNAME}/{record.doc_id}/{position:05d}.md"
+                (staging / relative).write_text(unit.text, encoding="utf-8")
+                rows.append(
+                    {
+                        "unit_id": unit_id,
+                        "path": relative,
+                        "title": unit.title,
+                        "tokens": unit.tokens,
+                        "metadata": {
+                            **levels,
+                            "doc_id": record.doc_id,
+                            "source_path": record.relative_path,
+                            **unit.metadata,
+                            "unit_id": unit_id,
+                        },
+                    }
+                )
+                index_rows.append((unit_id, unit.title, unit.body))
+
+        index = IdentifierIndex.build(index_rows)
+        summary.identifiers = len(index.entries)
+        (staging / UNIT_MANIFEST_FILENAME).write_text(
+            json.dumps(
+                {
+                    "schema_version": _SCHEMA_VERSION,
+                    "version": corpus_version,
+                    "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
+                    "level_names": list(level_names),
+                    "units": rows,
+                    "failed": summary.failed,
+                },
+                indent=1,
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
-        folder = units_dir / record.doc_id
-        folder.mkdir()
-        levels = {name: value for name in level_names if (value := record.levels.get(name)) is not None}
-        for position, unit in enumerate(units, start=1):
-            unit_id = f"{record.doc_id}:{unit.unit_id}"
-            relative = f"{UNITS_DIRNAME}/{record.doc_id}/{position:05d}.md"
-            (base / relative).write_text(unit.text, encoding="utf-8")
-            rows.append(
-                {
-                    "unit_id": unit_id,
-                    "path": relative,
-                    "title": unit.title,
-                    "tokens": unit.tokens,
-                    "metadata": {
-                        **levels,
-                        "doc_id": record.doc_id,
-                        "source_path": record.relative_path,
-                        **unit.metadata,
-                        "unit_id": unit_id,
-                    },
-                }
-            )
-            index_rows.append((unit_id, unit.title, unit.body))
-
-    index = IdentifierIndex.build(index_rows)
-    summary.identifiers = len(index.entries)
-    (base / UNIT_MANIFEST_FILENAME).write_text(
-        json.dumps(
-            {
-                "schema_version": _SCHEMA_VERSION,
-                "version": corpus_version,
-                "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
-                "level_names": list(level_names),
-                "units": rows,
-                "failed": summary.failed,
-            },
-            indent=1,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    (base / IDENTIFIER_INDEX_FILENAME).write_text(
-        json.dumps(index.to_dict(), ensure_ascii=False), encoding="utf-8"
-    )
+        (staging / IDENTIFIER_INDEX_FILENAME).write_text(
+            json.dumps(index.to_dict(), ensure_ascii=False), encoding="utf-8"
+        )
+        _publish(staging, base)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
     return summary

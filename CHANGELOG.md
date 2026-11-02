@@ -19,7 +19,11 @@ layer is opt-in with `tar-rag crawl --ingest`. Measured results are in `benchmar
   itself, and fetches 12 results instead of 6 when they are present.
 - **Evidence from inside files.** `search()` adds a section-routed search, BM25 word matches and exact
   identifier lookup to the normal folder search, and removes nothing. New `reason` values:
-  `section_route` and `identifier_match`.
+  `section_route` and `identifier_match`. An exact name sets `high` confidence only when at most 6
+  units hold the query's spelling. Look-alikes rank after it and do not set `high`.
+- **Safe re-ingest.** New output is built aside and swapped in at the end, so a run that stops early
+  leaves the earlier output whole. `from_artifacts` warns and stays at folder level when the ingest
+  artifacts and the corpus map come from different corpus versions.
 - **`TarRag.context_for`** returns a `ContextBundle` within a token budget: the best hits, the rest of
   any section split on size, and neighbouring units. Repeated text is dropped. `has_ocr` marks text
   from OCR.
