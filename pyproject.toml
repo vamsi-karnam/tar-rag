@@ -87,6 +87,7 @@ include = [
     "examples",
     "pypi/README_PYPI.md",
     "README.md",
+    "assets/system-flow.svg",
     "LICENSE",
     "THIRD_PARTY_NOTICES",
     "CHANGELOG.md",

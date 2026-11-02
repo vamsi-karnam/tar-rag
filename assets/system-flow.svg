@@ -1,0 +1,265 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1304" width="1000" height="1304" role="img" aria-labelledby="flow-title flow-desc"><title id="flow-title">tar-rag end-to-end system flow</title><desc id="flow-desc">Step 1, crawl: documents are crawled and optionally ingested into artifacts and units. Step 2, upload: your script stores them in a vector store. Step 3, query: a user query is resolved to the hottest branch, searched with progressively wider filters, enriched with file-level evidence, gated by confidence, and passed to your LLM within a token budget.</desc><defs>
+<style>
+text{font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;fill:#ffffff}
+.bg{fill:#0f172a}.lane{fill:#1e293b;stroke:#94a3b8;stroke-width:1.5}
+.h1{font-size:23px;font-weight:700}.h{font-size:16px;font-weight:700}.w{font-size:12.5px;fill:#cbd5e1}
+.t{font-size:14.5px;font-weight:600}.t2{font-size:13px;font-weight:600}.d{font-size:12.5px}.n{font-size:12px;fill:#cbd5e1}
+.m{font-family:Consolas,"SFMono-Regular",Menlo,"DejaVu Sans Mono",monospace}
+.b{stroke-width:1.5}.pr{fill:#334155;stroke:#cbd5e1}.ar{fill:#92400e;stroke:#fcd34d;stroke-width:2}.vs{fill:#065f46;stroke:#86efac;stroke-width:2}
+.de{fill:#3730a3;stroke:#c7d2fe;stroke-width:2}.ou{fill:#6b21a8;stroke:#e9d5ff;stroke-width:2.5}.ga{fill:#7f1d1d;stroke:#fca5a5;stroke-width:2}
+.us{fill:#334155;stroke:#ffffff;stroke-width:2.5}.nt{fill:#0f172a;stroke:#64748b}
+.cap{fill:none;stroke:#86efac;stroke-width:2}.opt{fill:none;stroke:#94a3b8;stroke-width:1.2;stroke-dasharray:6 4}
+.l{fill:none;stroke-width:1.8;stroke-linejoin:round}.flow{stroke:#94a3b8}.load{stroke:#fcd34d;stroke-dasharray:5 4}.ask{stroke:#c7d2fe;stroke-dasharray:5 4}
+#flow path{fill:#94a3b8}#load path{fill:#fcd34d}#ask path{fill:#c7d2fe}
+</style>
+<marker id="flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 Z"/></marker>
+<marker id="load" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 Z"/></marker>
+<marker id="ask" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 Z"/></marker>
+</defs>
+<rect width="1000" height="1304" class="bg"/>
+<text x="16" y="36" class="h1">tar-rag: end-to-end system flow</text>
+<text x="16" y="58" class="w">From ./corpus to an answer. Nothing before your LLM calls an LLM.</text>
+<rect x="560" y="20" width="18" height="13" rx="3" class="b pr"/>
+<text x="585" y="31" class="n" text-anchor="start">Process</text>
+<rect x="702" y="20" width="18" height="13" rx="3" class="b ar"/>
+<text x="727" y="31" class="n" text-anchor="start">Artifact</text>
+<rect x="844" y="20" width="18" height="13" rx="3" class="b vs"/>
+<text x="869" y="31" class="n" text-anchor="start">Vector store</text>
+<rect x="560" y="44" width="18" height="13" rx="3" class="b de"/>
+<text x="585" y="55" class="n" text-anchor="start">Decision</text>
+<rect x="702" y="44" width="18" height="13" rx="3" class="b ou"/>
+<text x="727" y="55" class="n" text-anchor="start">Output to LLM</text>
+<rect x="844" y="44" width="18" height="13" rx="3" class="b ga"/>
+<text x="869" y="55" class="n" text-anchor="start">Token gate</text>
+<rect x="16" y="74" width="324" height="930" rx="12" class="lane"/>
+<text x="30" y="99" class="h">1 — Crawl</text>
+<text x="30" y="117" class="w">Once per corpus version</text>
+<rect x="352" y="74" width="246" height="930" rx="12" class="lane"/>
+<text x="366" y="99" class="h">2 — Upload</text>
+<text x="366" y="117" class="w">Your script</text>
+<rect x="610" y="74" width="374" height="930" rx="12" class="lane"/>
+<text x="624" y="99" class="h">3 — Query</text>
+<text x="624" y="117" class="w">Per user request</text>
+<rect x="16" y="1016" width="968" height="276" rx="12" class="lane"/>
+<text x="30" y="1041" class="h">3 — Query, continued</text>
+<text x="30" y="1059" class="w">Token gate and your LLM</text>
+<g data-box="30,128,296,62">
+<rect x="30" y="128" width="296" height="62" rx="8" class="b pr"/>
+<text x="42" y="155.0" class="t" text-anchor="start">./corpus (directory tree)</text>
+<text x="42" y="175.0" class="d" text-anchor="start">PDF, Markdown, HTML, DOCX, text and code</text>
+</g>
+<path d="M178,190 L178,212" class="l flow" marker-end="url(#flow)"/>
+<g data-box="30,214,296,82">
+<rect x="30" y="214" width="296" height="82" rx="8" class="b pr"/>
+<text x="42" y="243.0" class="t m" text-anchor="start">tar-rag crawl</text>
+<text x="42" y="263.0" class="d" text-anchor="start">Folder names become levels. Each file gets</text>
+<text x="42" y="279.0" class="d" text-anchor="start">text for aliases, a checksum and a doc_id.</text>
+</g>
+<path d="M178,296 L178,330" class="l flow" marker-end="url(#flow)"/>
+<text x="186" y="317" class="n" text-anchor="start">--ingest (optional)</text>
+<rect x="30" y="332" width="296" height="532" rx="10" class="opt"/>
+<text x="42" y="353" class="n">File-level layer</text>
+<g data-box="42,364,272,188">
+<rect x="42" y="364" width="272" height="188" rx="8" class="b pr"/>
+<text x="54" y="398.0" class="t" text-anchor="start">Read files · OCR</text>
+<text x="54" y="418.0" class="d" text-anchor="start">PDF, with StructuredPdfExtractor:</text>
+<text x="66" y="434.0" class="d" text-anchor="start">infer word gaps, drop watermarks</text>
+<text x="66" y="450.0" class="d" text-anchor="start">rebuild tables, join them across pages</text>
+<text x="66" y="466.0" class="d" text-anchor="start">remove repeated margin lines</text>
+<text x="66" y="482.0" class="d" text-anchor="start">run Tesseract OCR on image pages</text>
+<text x="66" y="498.0" class="d" text-anchor="start">check values against a second parser</text>
+<text x="54" y="514.0" class="d" text-anchor="start">Markdown, HTML, DOCX: read from markup</text>
+<text x="54" y="530.0" class="d" text-anchor="start">Other files: plain lines</text>
+</g>
+<path d="M178,552 L178,574" class="l flow" marker-end="url(#flow)"/>
+<g data-box="42,576,272,76">
+<rect x="42" y="576" width="272" height="76" rx="8" class="b pr"/>
+<text x="54" y="602.0" class="t" text-anchor="start">Section trees</text>
+<text x="54" y="622.0" class="d" text-anchor="start">PDF bookmarks, else detected headings,</text>
+<text x="54" y="638.0" class="d" text-anchor="start">else 10-page windows. One tree per file.</text>
+</g>
+<path d="M178,652 L178,674" class="l flow" marker-end="url(#flow)"/>
+<g data-box="42,676,272,76">
+<rect x="42" y="676" width="272" height="76" rx="8" class="b pr"/>
+<text x="54" y="702.0" class="t" text-anchor="start">Units</text>
+<text x="54" y="722.0" class="d" text-anchor="start">Sections of at most 800 tokens. Tables keep</text>
+<text x="54" y="738.0" class="d" text-anchor="start">their header. Each unit has section keys.</text>
+</g>
+<path d="M178,752 L178,774" class="l flow" marker-end="url(#flow)"/>
+<g data-box="42,776,272,76">
+<rect x="42" y="776" width="272" height="76" rx="8" class="b pr"/>
+<text x="54" y="802.0" class="t" text-anchor="start">Exact names</text>
+<text x="54" y="822.0" class="d" text-anchor="start">Register names, part numbers and similar,</text>
+<text x="54" y="838.0" class="d" text-anchor="start">with OCR look-alikes folded together.</text>
+</g>
+<g data-box="30,888,296,102">
+<rect x="30" y="888" width="296" height="102" rx="8" class="b nt"/>
+<text x="42" y="919.0" class="t" text-anchor="start">Where the network is</text>
+<text x="42" y="939.0" class="d" text-anchor="start">tar-rag makes no network calls of its own.</text>
+<text x="42" y="955.0" class="d" text-anchor="start">Your adapter reaches your store, and your</text>
+<text x="42" y="971.0" class="d" text-anchor="start">code reaches your LLM.</text>
+</g>
+<rect x="360" y="124" width="230" height="250" rx="10" class="opt"/>
+<text x="372" y="141" class="n">Written by step 1</text>
+<g data-box="366,148,218,106">
+<rect x="366" y="148" width="218" height="106" rx="8" class="b ar"/>
+<text x="378" y="173.0" class="t" text-anchor="start">Crawl artifacts</text>
+<text x="378" y="193.0" class="d m" text-anchor="start">corpus_map.json</text>
+<text x="378" y="209.0" class="d m" text-anchor="start">metadata_manifest.json</text>
+<text x="378" y="225.0" class="d m" text-anchor="start">search_plan_template.json</text>
+<text x="378" y="241.0" class="d m" text-anchor="start">confidence_config.json</text>
+</g>
+<g data-box="366,262,218,106">
+<rect x="366" y="262" width="218" height="106" rx="8" class="b ar"/>
+<text x="378" y="287.0" class="t" text-anchor="start">Ingest artifacts</text>
+<text x="378" y="307.0" class="d m" text-anchor="start">document_maps/</text>
+<text x="378" y="323.0" class="d m" text-anchor="start">units/</text>
+<text x="378" y="339.0" class="d m" text-anchor="start">unit_manifest.json</text>
+<text x="378" y="355.0" class="d m" text-anchor="start">identifier_index.json</text>
+</g>
+<path d="M326,236 L366,236" class="l flow" marker-end="url(#flow)"/>
+<path d="M326,345 L366,345" class="l flow" marker-end="url(#flow)"/>
+<path d="M475,374 L475,396" class="l load" marker-end="url(#load)"/>
+<text x="483" y="390" class="n" text-anchor="start">feeds</text>
+<g data-box="366,398,218,100">
+<rect x="366" y="398" width="218" height="100" rx="8" class="b pr"/>
+<text x="378" y="428.0" class="t" text-anchor="start">Your upload script</text>
+<text x="378" y="448.0" class="d" text-anchor="start">Chunk · embed · upsert files, or</text>
+<text x="378" y="464.0" class="d" text-anchor="start">units with --ingest. Stamp them</text>
+<text x="378" y="480.0" class="d" text-anchor="start">with the manifest metadata.</text>
+</g>
+<path d="M475,498 L475,522" class="l flow" marker-end="url(#flow)"/>
+<g data-box="366,524,218,466">
+<path d="M366,546 C366,516 584,516 584,546 L584,968 C584,998 366,998 366,968 Z" class="b vs"/>
+<path d="M366,546 C366,576 584,576 584,546" class="cap"/>
+<text x="475" y="602" class="t" text-anchor="middle">Vector store</text>
+<text x="475" y="620" class="d" text-anchor="middle">Any store, through an adapter</text>
+<text x="382" y="668" class="d" text-anchor="start">Holds, per chunk or unit:</text>
+<text x="394" y="684" class="d" text-anchor="start">the text and its embedding</text>
+<text x="394" y="700" class="d" text-anchor="start">level values</text>
+<text x="394" y="716" class="d" text-anchor="start">doc_id and source path</text>
+<text x="394" y="732" class="d" text-anchor="start">with --ingest: unit_id,</text>
+<text x="406" y="748" class="d" text-anchor="start">section_1 to section_4,</text>
+<text x="406" y="764" class="d" text-anchor="start">page range</text>
+<text x="475" y="872" class="d" text-anchor="middle">Filtered ANN: filter on the</text>
+<text x="475" y="888" class="d" text-anchor="middle">metadata, then rank by meaning.</text>
+</g>
+<g data-box="624,128,320,60">
+<rect x="624" y="128" width="320" height="60" rx="8" class="b pr"/>
+<text x="636" y="154.0" class="t m" text-anchor="start">TarRag.from_artifacts()</text>
+<text x="636" y="174.0" class="d" text-anchor="start">Loaded at startup, with a version check</text>
+</g>
+<path d="M590,158 L624,158" class="l load" marker-end="url(#load)"/>
+<g data-box="664,210,240,48">
+<rect x="664" y="210" width="240" height="48" rx="24.0" class="b us"/>
+<text x="784.0" y="239.0" class="t" text-anchor="middle">User query enters here</text>
+</g>
+<path d="M784,188 L784,208" class="l load" marker-end="url(#load)"/>
+<path d="M784,258 L784,276" class="l flow" marker-end="url(#flow)"/>
+<g data-box="624,278,320,66">
+<rect x="624" y="278" width="320" height="66" rx="8" class="b pr"/>
+<text x="636" y="299.0" class="t m" text-anchor="start">TarRag.search()</text>
+<text x="636" y="319.0" class="d" text-anchor="start">Resolve query → hottest branch: match levels,</text>
+<text x="636" y="335.0" class="d" text-anchor="start">file names and aliases. No embedding, no LLM.</text>
+</g>
+<path d="M784,344 L784,362" class="l flow" marker-end="url(#flow)"/>
+<g data-box="624,364,320,48">
+<rect x="624" y="364" width="320" height="48" rx="8" class="b pr"/>
+<text x="636" y="384.0" class="t" text-anchor="start">Search plan</text>
+<text x="636" y="404.0" class="d" text-anchor="start">Filters ordered from most specific to global</text>
+</g>
+<path d="M784,412 L784,430" class="l flow" marker-end="url(#flow)"/>
+<g data-box="712.0,431.0,144.0,62">
+<polygon points="784,431.0 884.0,462 784,493.0 684.0,462" class="b de"/>
+<text x="784" y="458.0" class="t2" text-anchor="middle">In cache?</text>
+<text x="784" y="474.0" class="t2" text-anchor="middle">(optional)</text>
+</g>
+<path d="M784,493 L784,514" class="l flow" marker-end="url(#flow)"/>
+<text x="790" y="508" class="n" text-anchor="start">no</text>
+<g data-box="624,516,320,56">
+<rect x="624" y="516" width="320" height="56" rx="8" class="b pr"/>
+<text x="636" y="540.0" class="t" text-anchor="start">Filtered ANN search</text>
+<text x="636" y="560.0" class="d" text-anchor="start">First filter. Top 6, or top 12 with units</text>
+</g>
+<path d="M584,544 L624,544" class="l flow" marker-end="url(#flow)" marker-start="url(#flow)"/>
+<path d="M784,572 L784,590" class="l flow" marker-end="url(#flow)"/>
+<g data-box="699.04,591.0,169.92,70">
+<polygon points="784,591.0 902.0,626 784,661.0 666.0,626" class="b de"/>
+<text x="784" y="622.0" class="t2" text-anchor="middle">Confident, with</text>
+<text x="784" y="638.0" class="t2" text-anchor="middle">enough results?</text>
+</g>
+<path d="M784,661 L784,682" class="l flow" marker-end="url(#flow)"/>
+<text x="790" y="676" class="n" text-anchor="start">no</text>
+<g data-box="624,684,288,60">
+<rect x="624" y="684" width="288" height="60" rx="8" class="b pr"/>
+<text x="636" y="702.0" class="t" text-anchor="start">Broaden</text>
+<text x="636" y="722.0" class="d" text-anchor="start">Run the wider filters in parallel. Keep the</text>
+<text x="636" y="738.0" class="d" text-anchor="start">first confident result, else the widest found.</text>
+</g>
+<path d="M584,714 L624,714" class="l flow" marker-end="url(#flow)" marker-start="url(#flow)"/>
+<path d="M784,744 L784,764" class="l flow" marker-end="url(#flow)"/>
+<path d="M902,626 L928,626 L928,764" class="l flow" marker-end="url(#flow)"/>
+<text x="908" y="620" class="n" text-anchor="start">yes</text>
+<path d="M884,462 L952,462 L952,836 L944,836" class="l flow" marker-end="url(#flow)"/>
+<text x="890" y="456" class="n" text-anchor="start">yes</text>
+<g data-box="624,766,320,150">
+<rect x="624" y="766" width="320" height="150" rx="8" class="b pr"/>
+<text x="636" y="805.0" class="t" text-anchor="start">--ingest: add evidence</text>
+<text x="636" y="825.0" class="d" text-anchor="start">Section route: title words pick a section, then one</text>
+<text x="648" y="841.0" class="d" text-anchor="start">more filtered search</text>
+<text x="636" y="857.0" class="d" text-anchor="start">Word matches: BM25 over units adds up to 3 units</text>
+<text x="636" y="873.0" class="d" text-anchor="start">Exact names: their units lead. Confidence is high</text>
+<text x="648" y="889.0" class="d" text-anchor="start">if at most 6 units hold that exact spelling</text>
+</g>
+<path d="M584,816 L624,816" class="l flow" marker-end="url(#flow)" marker-start="url(#flow)"/>
+<path d="M784,916 L784,934" class="l flow" marker-end="url(#flow)"/>
+<g data-box="624,936,320,54">
+<rect x="624" y="936" width="320" height="54" rx="8" class="b pr"/>
+<text x="636" y="959.0" class="t" text-anchor="start">RetrievalOutcome</text>
+<text x="636" y="979.0" class="d" text-anchor="start">Results, confidence, reason, clarification</text>
+</g>
+<path d="M944,963 L976,963 L976,234 L904,234" class="l ask" marker-end="url(#ask)"/>
+<text x="970" y="620" class="n" transform="rotate(-90 970 620)" text-anchor="middle">clarifying question, if ambiguous</text>
+<path d="M784,990 L784,1040" class="l flow" marker-end="url(#flow)"/>
+<g data-box="712.0,1040.0,144.0,64">
+<polygon points="784,1040.0 884.0,1072 784,1104.0 684.0,1072" class="b de"/>
+<text x="784" y="1068.0" class="t2" text-anchor="middle">confidence ≥</text>
+<text x="784" y="1084.0" class="t2" text-anchor="middle">threshold?</text>
+</g>
+<path d="M684,1072 L220,1072 L220,1136" class="l flow" marker-end="url(#flow)"/>
+<path d="M534,1072 L534,1136" class="l flow" marker-end="url(#flow)"/>
+<text x="228" y="1066" class="n" text-anchor="start">yes: high or medium</text>
+<text x="542" y="1066" class="n" text-anchor="start">low</text>
+<path d="M784,1104 L784,1136" class="l flow" marker-end="url(#flow)"/>
+<text x="790" y="1124" class="n" text-anchor="start">no: none</text>
+<g data-box="36,1138,368,66">
+<rect x="36" y="1138" width="368" height="66" rx="8" class="b pr"/>
+<text x="48" y="1159.0" class="t m" text-anchor="start">context_for()</text>
+<text x="48" y="1179.0" class="d" text-anchor="start">Best units within a token budget: hits, split sections,</text>
+<text x="48" y="1195.0" class="d" text-anchor="start">nearby units, then other hits, up to 3,460 tokens</text>
+</g>
+<g data-box="424,1138,220,66">
+<rect x="424" y="1138" width="220" height="66" rx="8" class="b pr"/>
+<text x="436" y="1159.0" class="t m" text-anchor="start">context_for()</text>
+<text x="436" y="1179.0" class="d" text-anchor="start">Three units only, so your</text>
+<text x="436" y="1195.0" class="d" text-anchor="start">LLM can answer or decline</text>
+</g>
+<g data-box="664,1138,240,66">
+<rect x="664" y="1138" width="240" height="66" rx="8" class="b ga"/>
+<text x="676" y="1167.0" class="t" text-anchor="start">0 chunks</text>
+<text x="676" y="1187.0" class="d" text-anchor="start">Token gate fires</text>
+</g>
+<path d="M220,1204 L220,1224" class="l flow" marker-end="url(#flow)"/>
+<path d="M534,1204 L534,1224" class="l flow" marker-end="url(#flow)"/>
+<g data-box="36,1226,608,52">
+<rect x="36" y="1226" width="608" height="52" rx="8" class="b ou"/>
+<text x="48" y="1248.0" class="t" text-anchor="start">Chunks → your LLM</text>
+<text x="48" y="1268.0" class="d" text-anchor="start">Your prompt plus bundle.text. Treat that text as data: documents are untrusted.</text>
+</g>
+<path d="M644,1252 L664,1252" class="l flow" marker-end="url(#flow)"/>
+<path d="M784,1204 L784,1226" class="l flow" marker-end="url(#flow)"/>
+<g data-box="664,1228,240,48">
+<rect x="664" y="1228" width="240" height="48" rx="24.0" class="b pr"/>
+<text x="784.0" y="1257.0" class="t" text-anchor="middle">Reply to the user</text>
+</g>
+</svg>

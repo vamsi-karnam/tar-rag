@@ -154,6 +154,13 @@ lives in [`examples/how-to-guide.md`](examples/how-to-guide.md#architecture-deta
 `context_for()` also lets three units through at `low` confidence, so that your
 LLM can answer from them or decline. At `none` it returns nothing.
 
+### End-to-end flow
+
+The same three steps in full, from your documents to the reply, with a generic
+vector store. Open the image for full size.
+
+![End-to-end flow of tar-rag. Step 1, crawl: tar-rag crawl reads a directory tree of documents and writes the crawl artifacts. With --ingest it also reads each file, runs OCR, builds section trees, writes units and indexes exact names. Step 2, upload: your script stores chunks or units in a vector store. Step 3, query: the user query is resolved to the hottest branch, searched with filters from most specific to global, and enriched with file-level evidence. Confidence then decides between full context, three units, or zero chunks, and the context goes to your LLM.](assets/system-flow.svg)
+
 ---
 
 ## Install
@@ -515,6 +522,7 @@ tar-rag/
 │   └── README_PYPI.md          #   short long-description shown on the PyPI project page
 ├── tests/                      # Offline + live test suites
 ├── .github/workflows/          # CI (tests + lint) + publish (TestPyPI → PyPI via OIDC)
+├── assets/                     # README images
 ├── README.md                   # This file
 ├── CHANGELOG.md
 ├── LICENSE
