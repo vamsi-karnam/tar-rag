@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from threading import RLock
@@ -79,7 +79,7 @@ class RetrievalCache:
 
     def set(self, cache_key: str, value: dict[str, Any]) -> None:
         payload = {
-            "cached_at": datetime.now(timezone.utc).isoformat(),
+            "cached_at": datetime.now(UTC).isoformat(),
             **value,
         }
         with self._lock:

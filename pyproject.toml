@@ -9,7 +9,7 @@ description = "Topology-Aware Retrieval for RAG — structure from folders down 
 readme = "pypi/README_PYPI.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
     { name = "Vamsi Karnam" }
 ]
@@ -30,7 +30,6 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -45,8 +44,7 @@ dependencies = [
     "pypdf>=6.21.4",
     "pdfplumber>=0.11.10",
     "pypdfium2>=5.9.0",
-    "pillow>=13.0.0; python_version >= '3.11'",
-    "pillow>=12.2.0; python_version < '3.11'",
+    "pillow>=13.0.0",
     "tesserocr>=2.12.0",
     "python-docx>=1.0.0",
 ]
@@ -123,7 +121,7 @@ exclude = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [
@@ -141,7 +139,7 @@ ignore = [
 ]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 strict = true
 ignore_missing_imports = true
 warn_unused_ignores = true

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -124,7 +124,7 @@ class MetadataManifest:
         ]
         return cls(
             version=corpus_version,
-            generated_at=generated_at or datetime.now(timezone.utc).isoformat(),
+            generated_at=generated_at or datetime.now(UTC).isoformat(),
             level_names=list(level_names),
             documents=rows,
         )

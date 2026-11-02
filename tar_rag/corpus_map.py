@@ -29,7 +29,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .models import DocumentRecord
@@ -62,7 +62,7 @@ class CorpusMapBuilder:
         generated_at: str | None = None,
     ) -> dict[str, Any]:
         documents_list = list(documents)
-        generated = generated_at or datetime.now(timezone.utc).isoformat()
+        generated = generated_at or datetime.now(UTC).isoformat()
         version = self._build_version_id(documents_list)
         tree = self._build_tree(documents_list)
         flat = [self._flat_document(doc) for doc in documents_list]

@@ -54,8 +54,10 @@ layer is opt-in with `tar-rag crawl --ingest`. Measured results are in `benchmar
   README.
 - The minimum `openai` version is 1.66.0, `pinecone` 5.0.0 and `qdrant-client` 1.10.0. `QdrantAdapter`
   uses `query_points`.
-- Minimum versions are now `pypdf` 6.21.4, `pypdfium2` 5.9.0 and `pillow` 13.0.0, or 12.2.0 on Python
-  3.10, which has no newer Pillow. CI also runs real local Qdrant and Chroma, and lints `examples/`.
+- **Breaking: Python 3.11 is now the minimum.** Python 3.10 reached end of life on 2026-10-01, and
+  Pillow's security fixes in 13.0.0 need 3.11.
+- Minimum versions are now `pypdf` 6.21.4, `pypdfium2` 5.9.0 and `pillow` 13.0.0. CI also runs real
+  local Qdrant and Chroma, and lints `examples/`.
 - `[pdf]` and `[docx]` remain as no-op extras. Error messages no longer point to them.
 
 ### Fixed

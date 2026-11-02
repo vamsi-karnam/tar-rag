@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .confidence import ConfidenceConfig
@@ -93,7 +93,7 @@ def build_artifacts(
     Otherwise the universal defaults from ``ConfidenceConfig()`` are used.
     """
     documents_list = list(documents)
-    when = generated_at or datetime.now(timezone.utc).isoformat()
+    when = generated_at or datetime.now(UTC).isoformat()
 
     corpus_map_builder = CorpusMapBuilder(level_names)
     corpus_map = corpus_map_builder.build(documents_list, generated_at=when)

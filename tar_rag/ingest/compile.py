@@ -17,7 +17,7 @@ import logging
 import shutil
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -203,7 +203,7 @@ def ingest_documents(
                 {
                     "schema_version": _SCHEMA_VERSION,
                     "version": corpus_version,
-                    "generated_at": generated_at or datetime.now(timezone.utc).isoformat(),
+                    "generated_at": generated_at or datetime.now(UTC).isoformat(),
                     "level_names": list(level_names),
                     "units": rows,
                     "failed": summary.failed,

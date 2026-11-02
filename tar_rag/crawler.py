@@ -19,7 +19,7 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .errors import MissingExtractorDependency, UnsupportedFileType
@@ -336,7 +336,7 @@ class DirectoryCrawler:
             extra_path=extra_path,
             checksum=checksum,
             size_bytes=stat.st_size,
-            last_modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
             aliases=aliases,
             text_sample=text[: self.text_sample_chars] if self.text_sample_chars else "",
             extension=extension,

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -171,7 +171,7 @@ class SearchPlanBuilder:
         attempts = self._default_attempts()
         return SearchPlanTemplate(
             version=version,
-            generated_at=generated_at or datetime.now(timezone.utc).isoformat(),
+            generated_at=generated_at or datetime.now(UTC).isoformat(),
             level_names=list(self.level_names),
             attempts=attempts,
         )
