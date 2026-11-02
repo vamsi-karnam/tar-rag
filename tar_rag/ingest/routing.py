@@ -12,14 +12,15 @@ import json
 import math
 import re
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from itertools import islice
 from pathlib import Path
 from typing import Any
 
 from ..models import RetrievalOutcome, SearchResult
 from .compile import DOCUMENT_MAPS_DIRNAME, UNIT_MANIFEST_FILENAME
-from .units import estimate_tokens
+from .units import tokens_for_chars
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _MIN_COVERAGE = 0.5
@@ -30,12 +31,32 @@ _FIRST_HITS = 5
 _LOW_CONFIDENCE_UNITS = 3
 _SHORT_DOCUMENT_UNITS = 6
 _LEXICAL_RESULTS = 3
+_COMMON_WORD_SHARE = 0.1
+_UNIT_GAP = "\n\n"
+_BLOCK_GAP = "\n\n---\n\n"
 _BM25_K1 = 1.2
 _BM25_B = 0.75
 
 
 def _tokens(text: str) -> set[str]:
     return {token for token in _TOKEN_RE.findall(text.lower()) if len(token) > 1}
+
+
+def level_match(levels: dict[str, Any], wanted: dict[str, Any], *, strict: bool = False) -> bool:
+    """True when ``levels`` agree with ``wanted``, ignoring case.
+
+    A file with no value at a level passes, unless ``strict`` asks for the value.
+    """
+    for name, value in wanted.items():
+        if not value:
+            continue
+        actual = levels.get(name)
+        if actual:
+            if str(actual).lower() != str(value).lower():
+                return False
+        elif strict:
+            return False
+    return True
 
 
 @dataclass
@@ -88,14 +109,13 @@ class SectionRouter:
         maps = [json.loads(path.read_text(encoding="utf-8")) for path in sorted(folder.glob("*.json"))]
         return cls(maps) if maps else None
 
-    def _in_scope(self, section: _Section, resolved: dict[str, str | None]) -> bool:
-        for name, value in resolved.items():
-            actual = section.levels.get(name)
-            if value and actual and str(actual).lower() != str(value).lower():
-                return False
-        return True
-
-    def route(self, query: str, resolved: dict[str, str | None]) -> SectionRoute | None:
+    def route(
+        self,
+        query: str,
+        resolved: dict[str, str | None],
+        pinned: dict[str, str] | None = None,
+    ) -> SectionRoute | None:
+        """Pick a section. ``resolved`` guides, and ``pinned`` levels are strict."""
         terms = [term for term in _tokens(query) if term in self.information]
         possible = sum(self.information[term] for term in terms)
         if not possible:
@@ -103,7 +123,9 @@ class SectionRouter:
         best: tuple[float, int, str, list[str]] | None = None
         tied_elsewhere = False
         for section in self.sections:
-            if not section.own or not self._in_scope(section, resolved):
+            if not section.own or not level_match(section.levels, resolved):
+                continue
+            if pinned and not level_match(section.levels, pinned, strict=True):
                 continue
             own = sum(self.information[t] for t in terms if t in section.own)
             if not own:
@@ -259,11 +281,26 @@ class _Context:
     def __init__(self, max_tokens: int, units: UnitStore | None) -> None:
         self.max_tokens = max_tokens
         self.units = units
-        self.tokens = 0
+        self.chars = 0
+        self.names: set[str] = set()
         self.taken: list[tuple[str, str, SearchResult | None]] = []
         self.ids: set[str] = set()
         self.bodies: set[str] = set()
         self.skipped = 0
+
+    def _labels(self, unit_id: str) -> tuple[str, str] | None:
+        """The document name and the line placing a unit in it. ``None`` for text with no row."""
+        if self.units is None or unit_id not in self.units.rows:
+            return None
+        row = self.units.rows[unit_id]
+        metadata = row.get("metadata") or {}
+        first = int(metadata.get("page_start") or 0)
+        title = str(row.get("title") or "")
+        return str(metadata.get("source_path") or "document"), f"[page {first}] {title}" if first else title
+
+    @property
+    def tokens(self) -> int:
+        return tokens_for_chars(self.chars) if self.chars else 0
 
     def take(self, unit_id: str, fallback: str = "", result: SearchResult | None = None) -> bool:
         if unit_id and unit_id in self.ids:
@@ -272,11 +309,20 @@ class _Context:
         text = stored or fallback
         if not text or _body(text) in self.bodies:
             return False
-        cost = estimate_tokens(_body(text) if stored else text)
-        if self.tokens + cost > self.max_tokens:
+        # The cost is what ``render`` writes, labels and gaps included.
+        labels = self._labels(unit_id)
+        if labels is None:
+            name, added = "", len(text) + len(_BLOCK_GAP)
+        else:
+            name, where = labels
+            added = len(f"{where}\n{_body(text)}") + len(_UNIT_GAP)
+            if name not in self.names:
+                added += len(f"Document: {name}{_UNIT_GAP}{_BLOCK_GAP}")
+        if tokens_for_chars(self.chars + added) > self.max_tokens:
             self.skipped += 1
             return False
-        self.tokens += cost
+        self.chars += added
+        self.names.add(name)
         self.bodies.add(_body(text))
         if unit_id:
             self.ids.add(unit_id)
@@ -286,24 +332,21 @@ class _Context:
     def render(self) -> str:
         """One line per document, then each unit in reading order, so lists read straight."""
         if self.units is None:
-            return "\n\n---\n\n".join(text for _, text, _ in self.taken)
+            return _BLOCK_GAP.join(text for _, text, _ in self.taken)
         units = self.units
         groups: dict[str, list[tuple[int, str]]] = {}
         for rank, (unit_id, text, _) in enumerate(self.taken):
-            if unit_id in units.rows:
-                metadata = units.rows[unit_id].get("metadata") or {}
-                name = str(metadata.get("source_path") or "document")
-                first = int(metadata.get("page_start") or 0)
-                title = str(units.rows[unit_id].get("title") or "")
-                where = f"[page {first}] {title}" if first else title
+            labels = self._labels(unit_id)
+            if labels is not None:
+                name, where = labels
                 groups.setdefault(name, []).append((units.position[unit_id], f"{where}\n{_body(text)}"))
             else:
                 groups.setdefault("", []).append((rank, text))
         blocks = []
         for name, parts in groups.items():
-            ordered = "\n\n".join(text for _, text in sorted(parts, key=lambda part: part[0]))
-            blocks.append(f"Document: {name}\n\n{ordered}" if name else ordered)
-        return "\n\n---\n\n".join(blocks)
+            ordered = _UNIT_GAP.join(text for _, text in sorted(parts, key=lambda part: part[0]))
+            blocks.append(f"Document: {name}{_UNIT_GAP}{ordered}" if name else ordered)
+        return _BLOCK_GAP.join(blocks)
 
 
 def assemble_context(
@@ -397,7 +440,27 @@ class LexicalIndex:
                 self.postings.setdefault(term, []).append((index, count))
         self.average = sum(self.lengths) / max(1, len(self.lengths))
 
-    def search(self, query: str, limit: int = _LEXICAL_RESULTS) -> list[str]:
+    def distinctive(self, query: str, scope_names: list[str]) -> str:
+        """The query's words that can tell units apart.
+
+        A word naming the scope, or found all over the corpus, matches almost
+        any unit, so it says nothing about whether the scope holds the answer.
+        """
+        named = _tokens(" ".join(scope_names))
+        limit = _COMMON_WORD_SHARE * len(self.lengths)
+        return " ".join(
+            term
+            for term in sorted(_tokens(query))
+            if term not in named and len(self.postings.get(term, [])) <= limit
+        )
+
+    def search(
+        self,
+        query: str,
+        limit: int = _LEXICAL_RESULTS,
+        keep: Callable[[str], bool] | None = None,
+    ) -> list[str]:
+        """Return the best units. ``keep`` filters before the limit, so it cannot empty the result."""
         scores: dict[int, float] = {}
         total = len(self.lengths)
         for term in _tokens(query):
@@ -408,8 +471,9 @@ class LexicalIndex:
             for index, count in postings:
                 scale = 1 - _BM25_B + _BM25_B * self.lengths[index] / max(1.0, self.average)
                 scores[index] = scores.get(index, 0.0) + rarity * count * (_BM25_K1 + 1) / (count + _BM25_K1 * scale)
-        best = sorted(scores, key=lambda index: (-scores[index], index))[:limit]
-        found = [self.units.order[index] for index in best]
+        ranked = sorted(scores, key=lambda index: (-scores[index], index))
+        names = (self.units.order[index] for index in ranked)
+        found = list(islice((name for name in names if keep is None or keep(name)), limit))
         if found and len(self.units._document_units(found[0])) <= _SHORT_DOCUMENT_UNITS:
             found = [*found, *self.units._document_units(found[0])]
         return list(dict.fromkeys(found))

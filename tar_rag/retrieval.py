@@ -10,11 +10,15 @@ the best outcome.
 
 Selection priority on the final pass:
 
-1. The first attempt that produced ``high`` / ``medium`` confidence, OR
+1. The first attempt with ``high`` / ``medium`` confidence and at least
+   ``min_results`` results, OR
 2. The first attempt that produced any results and disallows further
    broadening, OR
 3. The last attempt that produced results (fall through), OR
 4. An empty outcome flagged ``reason="global_fallback"``.
+
+A confident attempt with too few results, skipped by step 1, still wins
+over a final choice that is not confident.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from typing import Any
 
 from .adapters.base import AbstractVectorStoreAdapter
 from .cache import RetrievalCache
@@ -185,7 +190,19 @@ class RetrievalOrchestrator:
         cached = self.cache.get(key)
         if not cached:
             return None
-        results = [
+        return RetrievalOutcome(
+            executed=True,
+            reason=str(cached.get("reason", "cache_hit")),
+            confidence=str(cached.get("confidence", "none")),
+            top_score=float(cached.get("top_score", 0.0) or 0.0),
+            attempts_made=int(cached.get("attempts_made", 0) or 0),
+            results=self._cached_results(cached),
+            cache_hit=True,
+        )
+
+    @staticmethod
+    def _cached_results(cached: dict[str, Any]) -> list[SearchResult]:
+        return [
             SearchResult(
                 score=float(row.get("score", 0.0)),
                 snippet=str(row.get("snippet", "")),
@@ -195,14 +212,27 @@ class RetrievalOrchestrator:
             )
             for row in (cached.get("results") or [])
         ]
-        return RetrievalOutcome(
-            executed=True,
-            reason=str(cached.get("reason", "cache_hit")),
-            confidence=str(cached.get("confidence", "none")),
-            top_score=float(cached.get("top_score", 0.0) or 0.0),
-            attempts_made=int(cached.get("attempts_made", 0) or 0),
-            results=results,
-            cache_hit=True,
+
+    def _routed_key(self, context: QueryContext) -> str:
+        return RetrievalCache.build_key(
+            context.normalized_query,
+            self.corpus_version,
+            f"{context.context_signature}::section_route",
+        )
+
+    def read_routed(self, context: QueryContext) -> list[SearchResult] | None:
+        """Return the routed results cached with this query, or ``None``."""
+        if self.cache is None or not self.corpus_version:
+            return None
+        cached = self.cache.get(self._routed_key(context))
+        return None if cached is None else self._cached_results(cached)
+
+    def write_routed(self, context: QueryContext, results: list[SearchResult]) -> None:
+        if self.cache is None or not self.corpus_version:
+            return
+        self.cache.set(
+            self._routed_key(context),
+            {"corpus_version": self.corpus_version, "results": [result.to_dict() for result in results]},
         )
 
     def _write_cache(self, context: QueryContext, outcome: RetrievalOutcome) -> None:
@@ -349,6 +379,7 @@ class RetrievalOrchestrator:
         attempts_made: int,
     ) -> RetrievalOutcome:
         chosen: _AttemptOutcome | None = None
+        thin: _AttemptOutcome | None = None
         ran = [outcomes[a.attempt] for a in attempts if a.attempt in outcomes]
         any_failed = any(item.failed for item in ran)
         error = "every search attempt failed; see the log" if ran and all(item.failed for item in ran) else None
@@ -360,10 +391,16 @@ class RetrievalOrchestrator:
                 chosen = outcome
             if not outcome.results:
                 continue
+            confident = outcome.confidence in {"high", "medium"}
+            if confident and attempt.allow_broaden and len(outcome.results) < self.min_results:
+                thin = thin or outcome
+                continue
             chosen = outcome
-            if outcome.confidence in {"high", "medium"} or not attempt.allow_broaden:
+            if confident or not attempt.allow_broaden:
                 break
 
+        if thin is not None and (chosen is None or chosen.confidence not in {"high", "medium"}):
+            chosen = thin
         if chosen is None:
             return RetrievalOutcome(
                 executed=True,

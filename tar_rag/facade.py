@@ -15,8 +15,10 @@ Typical use::
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import threading
 import warnings
 from pathlib import Path
 from typing import Any
@@ -42,6 +44,7 @@ from .ingest.routing import (
     UnitStore,
     assemble_context,
     blend_results,
+    level_match,
     section_filter,
 )
 from .models import ConversationTurn, QueryContext, RetrievalOutcome, SearchResult
@@ -75,6 +78,7 @@ class TarRag:
         self.identifiers = identifiers
         self.units = units
         self._lexical: LexicalIndex | None = None
+        self._lexical_lock = threading.Lock()
         self.corpus_map = corpus_map
         self.level_names = list(corpus_map.get("level_names") or [])
         self.corpus_version = str(corpus_map.get("version") or "")
@@ -192,18 +196,23 @@ class TarRag:
         attach_clarification: bool = True,
     ) -> RetrievalOutcome:
         context, attempts = self._prepare(query, conversation, explicit_levels)
+        pins = self._pins(context, explicit_levels)
         outcome = self.orchestrator.execute(context, attempts)
         routed: list[SearchResult] = []
-        route = self._route(context)
-        if route is not None:
+        route = self._route(context, pins)
+        cached = self._cached_routed(context, outcome, route)
+        if cached is not None:
+            routed = cached
+        elif route is not None:
             try:
                 routed = self.orchestrator.adapter.search(
                     context.effective_query, section_filter(route), self.orchestrator.top_k
                 )
+                self.orchestrator.write_routed(context, routed)
             except Exception as exc:
                 # The routed search only adds evidence, so its failure must not end a good search.
                 self.orchestrator.logger.warning("Routed search failed: %s", exc)
-        return self._finish(query, context, outcome, routed, attach_clarification, explicit_levels)
+        return self._finish(query, context, outcome, routed, attach_clarification, pins)
 
     async def asearch(
         self,
@@ -214,17 +223,25 @@ class TarRag:
         attach_clarification: bool = True,
     ) -> RetrievalOutcome:
         context, attempts = self._prepare(query, conversation, explicit_levels)
+        pins = self._pins(context, explicit_levels)
         outcome = await self.orchestrator.aexecute(context, attempts)
         routed: list[SearchResult] = []
-        route = self._route(context)
-        if route is not None:
+        route = self._route(context, pins)
+        cached = self._cached_routed(context, outcome, route)
+        if cached is not None:
+            routed = cached
+        elif route is not None:
             try:
                 routed = await self.orchestrator.adapter.asearch(
                     context.effective_query, section_filter(route), self.orchestrator.top_k
                 )
+                self.orchestrator.write_routed(context, routed)
             except Exception as exc:
                 self.orchestrator.logger.warning("Routed search failed: %s", exc)
-        return self._finish(query, context, outcome, routed, attach_clarification, explicit_levels)
+        # Reads unit files, and builds the word index on first use, so it leaves the event loop.
+        return await asyncio.to_thread(
+            self._finish, query, context, outcome, routed, attach_clarification, pins
+        )
 
     # ------------------------------------------------------------------
     # Internals
@@ -245,50 +262,82 @@ class TarRag:
         attempts = self.search_plan_builder.resolve(context, template=self.search_plan)
         return context, attempts
 
-    def _route(self, context: QueryContext) -> SectionRoute | None:
+    @staticmethod
+    def _pins(
+        context: QueryContext, explicit_levels: dict[str, str | None] | None
+    ) -> dict[str, str]:
+        """The caller's pinned levels, in the spelling the corpus uses."""
+        return {
+            name: context.resolved.get(name) or value
+            for name, value in (explicit_levels or {}).items()
+            if value
+        }
+
+    def _cached_routed(
+        self, context: QueryContext, outcome: RetrievalOutcome, route: SectionRoute | None
+    ) -> list[SearchResult] | None:
+        """A cached query reuses its routed results too, so a repeat needs no store call."""
+        if route is None or not outcome.cache_hit:
+            return None
+        return self.orchestrator.read_routed(context)
+
+    def _route(self, context: QueryContext, pins: dict[str, str]) -> SectionRoute | None:
         if self.section_router is None:
             return None
-        return self.section_router.route(context.effective_query, context.resolved)
+        return self.section_router.route(context.effective_query, context.resolved, pins)
 
-    def _in_scope(self, unit_id: str, explicit_levels: dict[str, str | None] | None) -> bool:
-        """Honour pinned levels: exact lookup must not read outside the caller's scope."""
+    def _metadata(self, unit_id: str) -> dict[str, Any]:
         assert self.units is not None
-        metadata = self.units.rows[unit_id].get("metadata") or {}
-        for name, value in (explicit_levels or {}).items():
-            if value and metadata.get(name) != value:
-                return False
-        return True
+        return dict(self.units.rows[unit_id].get("metadata") or {})
 
-    def _unit_results(
-        self, unit_ids: list[str], explicit_levels: dict[str, str | None] | None
-    ) -> list[SearchResult]:
+    def _in_scope(self, unit_id: str, pins: dict[str, str]) -> bool:
+        """Honour pinned levels: evidence must not come from outside the caller's scope."""
+        return level_match(self._metadata(unit_id), pins, strict=True)
+
+    def _unit_results(self, unit_ids: list[str], pins: dict[str, str]) -> list[SearchResult]:
         if self.units is None:
             return []
         results = [
             self.units.result(unit_id)
             for unit_id in unit_ids
-            if unit_id in self.units.rows and self._in_scope(unit_id, explicit_levels)
+            if unit_id in self.units.rows and self._in_scope(unit_id, pins)
         ]
         return [result for result in results if result is not None]
 
-    def _named_results(
-        self, query: str, explicit_levels: dict[str, str | None] | None = None
-    ) -> tuple[list[SearchResult], bool]:
+    def _named_results(self, query: str, pins: dict[str, str]) -> tuple[list[SearchResult], bool]:
         """Return the units for names in ``query``, and whether in-scope units settle it."""
         if self.identifiers is None:
             return [], False
         match = self.identifiers.match(query)
-        found = self._unit_results(match.units, explicit_levels)
+        found = self._unit_results(match.units, pins)
         return found, any(result.metadata.get("unit_id") in match.decisive for result in found)
 
+    def _lexical_index(self) -> LexicalIndex:
+        assert self.units is not None
+        with self._lexical_lock:
+            if self._lexical is None:
+                self._lexical = LexicalIndex(self.units)
+            return self._lexical
+
     def _lexical_results(
-        self, query: str, explicit_levels: dict[str, str | None] | None = None
+        self, query: str, context: QueryContext, pins: dict[str, str]
     ) -> list[SearchResult]:
         if self.units is None or not self.units.rows:
             return []
-        if self._lexical is None:
-            self._lexical = LexicalIndex(self.units)
-        found = self._unit_results(self._lexical.search(query), explicit_levels)
+        index = self._lexical_index()
+
+        def in_pins(unit_id: str) -> bool:
+            return self._in_scope(unit_id, pins)
+
+        def in_named_scope(unit_id: str) -> bool:
+            return in_pins(unit_id) and level_match(self._metadata(unit_id), context.resolved)
+
+        # The scope a query names is a guess, so it widens unless a telling word matches
+        # inside it. A pin never widens.
+        names = [str(value) for value in context.resolved.values() if value]
+        focused = index.distinctive(query, names) if names else ""
+        scoped = index.search(focused, keep=in_named_scope) if focused else []
+        found = self._unit_results(scoped or index.search(query, keep=in_pins), pins)
         for result in found:
             result.score = 0.0  # not comparable with a vector score, so it must not lift confidence
         return found
@@ -300,17 +349,17 @@ class TarRag:
         outcome: RetrievalOutcome,
         routed: list[SearchResult],
         attach_clarification: bool,
-        explicit_levels: dict[str, str | None] | None = None,
+        pins: dict[str, str],
     ) -> RetrievalOutcome:
         """Add exact, routed and lexical evidence to the normal outcome. Nothing is taken away."""
-        named, decisive = self._named_results(query, explicit_levels)
+        named, decisive = self._named_results(query, pins)
         if routed:
             outcome.results = blend_results(routed, outcome.results)
             ordered = sorted(outcome.results, key=lambda result: result.score, reverse=True)
             outcome.confidence = self.orchestrator.scorer.score(ordered)
             outcome.top_score = ordered[0].score
             outcome.reason = "section_route"
-        lexical = self._lexical_results(query, explicit_levels)
+        lexical = self._lexical_results(query, context, pins)
         if lexical:
             outcome.results = blend_results(outcome.results, lexical)
         if named:
@@ -332,6 +381,12 @@ class TarRag:
     ) -> ContextBundle:
         """Return the best results that fit ``max_tokens``, ready for an LLM."""
         return assemble_context(outcome, max_tokens=max_tokens, units=self.units)
+
+    async def acontext_for(
+        self, outcome: RetrievalOutcome, *, max_tokens: int = DEFAULT_CONTEXT_TOKENS
+    ) -> ContextBundle:
+        """``context_for`` off the event loop, because it reads unit files."""
+        return await asyncio.to_thread(self.context_for, outcome, max_tokens=max_tokens)
 
     def _attach_clarification(self, context: QueryContext, outcome: RetrievalOutcome) -> None:
         clarification = self.resolver.build_clarification(

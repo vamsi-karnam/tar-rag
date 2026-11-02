@@ -26,12 +26,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # The core install has no vector store or LLM client. Tests use
-          # stubs, and live tests are deselected below.
-          pip install -e ".[dev]"
+          # The core install has no vector store or LLM client. The Qdrant and
+          # Chroma extras run real local engines; other stores use stubs, and
+          # live tests are deselected below.
+          pip install -e ".[dev,qdrant,chroma]"
 
       - name: Run tests (offline only)
         run: pytest tests/ -m "not live" -q
 
       - name: Lint
-        run: ruff check tar_rag tests
+        run: ruff check tar_rag tests examples

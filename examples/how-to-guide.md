@@ -192,6 +192,13 @@ aside and swapped in at the end, so a run that stops early leaves the earlier ou
 whole. A file that fails is listed in the summary under `failed`, and the run
 continues.
 
+`tar-rag crawl` exits with `0` on success, `1` on an error and `2` on bad arguments.
+With `--ingest` it exits with `3` when the run finished but content is missing: a
+file failed, a page failed, or a page still needs OCR. It then prints a warning to
+stderr, even with `--quiet`, and still writes the output. `failed_pages` is in the
+summary, and each file's `document_maps/<doc_id>.json` lists the pages. Its
+`unverified_pages` are pages the value check could not read. Their text is kept.
+
 A plain crawl into the same folder does not refresh the ingest artifacts. If the
 corpus changed, `from_artifacts` warns, ignores them and stays at folder level until
 you run `--ingest` again. After a re-ingest, resync your store: a stored unit that
@@ -296,8 +303,14 @@ adds evidence, and takes nothing away:
 
 Lookup compares names with look-alike characters folded (`I` and `L` to `1`, `O` to
 `0`), so an OCR misread can still match. Units with the query's own spelling rank
-first, so `REG_10` comes before a look-alike `REG_IO`. Pinned `explicit_levels` limit
-all three.
+first, so `REG_10` comes before a look-alike `REG_IO`.
+
+Pinned `explicit_levels` limit all three: a file with no value at a pinned level is
+left out, and case does not matter. Word matches also prefer the scope a query names.
+They widen when no telling word of the query matches there: words that name the scope,
+or that appear in more than a tenth of all units, do not count. Pins are a search
+filter, not access control: the folder search can still widen past a pin when its
+fallback chain reaches a global attempt.
 
 Then build the context:
 

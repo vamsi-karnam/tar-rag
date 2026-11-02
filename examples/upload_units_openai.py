@@ -21,6 +21,8 @@ from pathlib import Path
 
 from openai import OpenAI
 
+MAX_ATTRIBUTES = 16  # OpenAI's limit for one file
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Upload tar-rag units to OpenAI")
@@ -31,6 +33,9 @@ def main() -> None:
 
     base = Path(args.output_dir)
     manifest = json.loads((base / "unit_manifest.json").read_text(encoding="utf-8"))
+    largest = max((len(row["metadata"]) for row in manifest["units"]), default=0)
+    if largest > MAX_ATTRIBUTES:
+        raise SystemExit(f"A unit has {largest} metadata keys, and OpenAI allows {MAX_ATTRIBUTES}. Use fewer levels.")
     client = OpenAI()
     store = client.vector_stores.create(name=args.name or f"tar-rag-{manifest['version']}")
     strategy = {

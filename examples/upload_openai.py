@@ -118,7 +118,7 @@ def main() -> None:
             if existing_id:
                 try:
                     client.vector_stores.retrieve(existing_id)
-                except Exception as exc:  # noqa: BLE001 — surface any retrieval failure as a fallback to upload
+                except Exception as exc:
                     print(f"Existing vector store '{existing_id}' is no longer retrievable ({exc}); proceeding with re-upload.")
                 else:
                     print(f"Manifest version unchanged ({manifest.version}); reusing vector store '{existing_id}'.")
@@ -187,7 +187,7 @@ def main() -> None:
     print(f"Active state written to: {args.output}")
     print()
     print("Next: set environment variables before running queries / live tests:")
-    print(f"  export OPENAI_API_KEY=<your key>")
+    print("  export OPENAI_API_KEY=<your key>")
     print(f"  export TAR_RAG_OPENAI_VECTOR_STORE_ID={vector_store_id}")
 
 

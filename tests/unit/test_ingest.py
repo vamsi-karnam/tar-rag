@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +20,7 @@ from tar_rag.ingest import (
     SectionRouter,
     build_document_tree,
     build_units,
+    estimate_tokens,
     extract_identifiers,
     ingest_documents,
     load_document,
@@ -718,3 +722,356 @@ def test_exact_unit_outside_the_pin_does_not_force_high(tmp_path: Path) -> None:
     tar = TarRag.from_artifacts(output, adapter=RecordingAdapter(score=0.1))
     outcome = tar.search("What does REG_10 hold?", explicit_levels={"product": "beta"})
     assert outcome.confidence != "high"
+
+
+class BranchAdapter(AbstractVectorStoreAdapter):
+    """Gives a filtered search one set of hits and an unfiltered search another."""
+
+    def __init__(self, narrow: list[SearchResult], wide: list[SearchResult]) -> None:
+        self.narrow = narrow
+        self.wide = wide
+        self.calls: list[Any] = []
+
+    def search(self, query: str, filters: dict[str, Any] | None, top_k: int) -> list[SearchResult]:
+        self.calls.append(filters)
+        return list(self.narrow if filters else self.wide)
+
+
+def _hits(prefix: str, count: int, score: float) -> list[SearchResult]:
+    return [SearchResult(score, f"{prefix} {n}", {"unit_id": f"{prefix}{n}"}) for n in range(count)]
+
+
+def _chosen(tar: TarRag, query: str) -> list[str]:
+    return [result.snippet.split()[0] for result in tar.orchestrator.execute(*tar._prepare(query, None, None)).results]
+
+
+def test_too_few_results_use_the_wider_search(corpus: tuple[Path, Path]) -> None:
+    _, output = corpus
+    adapter = BranchAdapter(_hits("narrow", 2, 0.9), _hits("wide", 10, 0.8))
+    tar = TarRag.from_artifacts(output, adapter=adapter)
+    assert set(_chosen(tar, "alpha watchdog")) == {"wide"}
+
+
+def test_thin_confident_result_beats_a_weak_wide_one(corpus: tuple[Path, Path]) -> None:
+    _, output = corpus
+    adapter = BranchAdapter(_hits("narrow", 2, 0.9), _hits("wide", 10, 0.1))
+    tar = TarRag.from_artifacts(output, adapter=adapter)
+    assert set(_chosen(tar, "alpha watchdog")) == {"narrow"}
+
+
+def test_file_level_corpus_stops_at_one_confident_result(tmp_path: Path) -> None:
+    root = tmp_path / "corpus" / "manuals" / "alpha"
+    root.mkdir(parents=True)
+    (root / "guide.md").write_text("# Guide\n\nText.\n", encoding="utf-8")
+    crawler = DirectoryCrawler(tmp_path / "corpus", level_names=["category", "product"])
+    build_artifacts(crawler.crawl(), level_names=["category", "product"]).write(tmp_path / "old")
+    adapter = BranchAdapter(_hits("narrow", 1, 0.9), _hits("wide", 10, 0.8))
+    tar = TarRag.from_artifacts(tmp_path / "old", adapter=adapter)
+    assert set(_chosen(tar, "alpha watchdog")) == {"narrow"}
+    assert len(adapter.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_async_search_keeps_the_event_loop_free(
+    corpus: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, output = corpus
+    builds: list[int] = []
+    real_init = LexicalIndex.__init__
+
+    def slow_init(self: LexicalIndex, units: UnitStore) -> None:
+        builds.append(threading.get_ident())
+        time.sleep(0.05)
+        real_init(self, units)
+
+    monkeypatch.setattr(LexicalIndex, "__init__", slow_init)
+    tar = TarRag.from_artifacts(output, adapter=RecordingAdapter())
+    await asyncio.gather(tar.asearch("watchdog timer"), tar.asearch("serial port"))
+    assert len(builds) == 1
+    assert builds[0] != threading.get_ident()
+
+
+def test_headings_with_no_letters_do_not_rescan_the_document(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tar_rag.ingest import units as units_module
+
+    calls = 0
+    real = units_module._title_matches
+
+    def counting(line: str, title_key: str) -> bool:
+        nonlocal calls
+        calls += 1
+        return real(line, title_key)
+
+    monkeypatch.setattr(units_module, "_title_matches", counting)
+    document = parse_markdown("# !!!\n\nbody\n\n" * 400)
+    units = build_units(document, build_document_tree(document))
+    assert calls < 4000
+    assert sum(unit.body.count("body") for unit in units) == 400
+
+
+def _scoped_corpus(tmp_path: Path) -> Path:
+    root = tmp_path / "scoped"
+    alpha = root / "manuals" / "alpha"
+    beta = root / "manuals" / "beta"
+    alpha.mkdir(parents=True)
+    beta.mkdir(parents=True)
+    (root / "note.md").write_text("# Calibration procedure\n\nA note in no product.\n", encoding="utf-8")
+    (beta / "guide.md").write_text("# Storage\n\nThe seal kit stays dry on the beta unit. STORE_REG holds status.\n", encoding="utf-8")
+    for n in range(6):
+        (alpha / f"m{n}.md").write_text("# Sealing\n\n" + "seal kit seal kit gasket " * 8 + "\n", encoding="utf-8")
+    (alpha / "only.md").write_text("# Mooring\n\nThe mooring shackle needs a new pin.\n", encoding="utf-8")
+    gamma = root / "manuals" / "gamma"
+    gamma.mkdir()
+    parts = "".join(f"## Part {n}\n\nThe filler words of part {n}.\n\n" for n in range(90))
+    (gamma / "filler.md").write_text(f"# Filler\n\n{parts}", encoding="utf-8")
+    output = tmp_path / "scoped_out"
+    _crawl_and_ingest(root, output)
+    return output
+
+
+def _sources(outcome: RetrievalOutcome) -> set[str]:
+    return {str(result.metadata.get("source_path")) for result in outcome.results}
+
+
+def _note_doc_id(output: Path) -> str:
+    rows = json.loads((output / "unit_manifest.json").read_text(encoding="utf-8"))["units"]
+    return next(row["metadata"]["doc_id"] for row in rows if row["metadata"]["source_path"] == "note.md")
+
+
+def test_section_route_stays_inside_a_pin(tmp_path: Path) -> None:
+    output = _scoped_corpus(tmp_path)
+    adapter = BranchAdapter([], [])
+    TarRag.from_artifacts(output, adapter=adapter).search("calibration procedure", explicit_levels={"product": "beta"})
+    assert not any(_note_doc_id(output) in str(call) for call in adapter.calls)
+
+
+def test_section_route_still_finds_a_file_with_no_level_when_unpinned(tmp_path: Path) -> None:
+    output = _scoped_corpus(tmp_path)
+    adapter = BranchAdapter([], [])
+    TarRag.from_artifacts(output, adapter=adapter).search("calibration procedure")
+    assert any(_note_doc_id(output) in str(call) for call in adapter.calls)
+
+
+def test_word_matches_inside_a_pin_are_not_crowded_out(tmp_path: Path) -> None:
+    tar = TarRag.from_artifacts(_scoped_corpus(tmp_path), adapter=BranchAdapter([], []))
+    outcome = tar.search("seal kit", explicit_levels={"product": "beta"})
+    assert _sources(outcome) == {"manuals/beta/guide.md"}
+
+
+def test_pin_in_another_case_keeps_its_exact_names(tmp_path: Path) -> None:
+    tar = TarRag.from_artifacts(_scoped_corpus(tmp_path), adapter=BranchAdapter([], []))
+    outcome = tar.search("What does STORE_REG hold?", explicit_levels={"product": "Beta"})
+    assert outcome.reason == "identifier_match"
+    assert "manuals/beta/guide.md" in _sources(outcome)
+
+
+def test_word_matches_prefer_the_scope_the_query_named(tmp_path: Path) -> None:
+    tar = TarRag.from_artifacts(_scoped_corpus(tmp_path), adapter=BranchAdapter([], []))
+    assert _sources(tar.search("beta seal kit")) == {"manuals/beta/guide.md"}
+
+
+@pytest.mark.parametrize("query", ["beta mooring shackle", "the mooring shackle for the beta"])
+def test_word_matches_widen_past_scope_names_and_common_words(tmp_path: Path, query: str) -> None:
+    tar = TarRag.from_artifacts(_scoped_corpus(tmp_path), adapter=BranchAdapter([], []))
+    assert "manuals/alpha/only.md" in _sources(tar.search(query))
+
+
+def test_a_pin_does_not_widen(tmp_path: Path) -> None:
+    tar = TarRag.from_artifacts(_scoped_corpus(tmp_path), adapter=BranchAdapter([], []))
+    outcome = tar.search("beta mooring shackle", explicit_levels={"product": "beta"})
+    assert "manuals/alpha/only.md" not in _sources(outcome)
+
+
+def _pdf(path: Path, pages: int) -> None:
+    from reportlab.pdfgen import canvas
+
+    drawing = canvas.Canvas(str(path))
+    for number in range(pages):
+        drawing.drawString(72, 700, f"Page {number + 1} sets the value 0x10.")
+        drawing.showPage()
+    drawing.save()
+
+
+def test_one_bad_page_in_the_value_check_keeps_the_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("reportlab")
+    from pypdf._page import PageObject
+
+    from tar_rag.extractors import StructuredPdfExtractor
+
+    _pdf(tmp_path / "doc.pdf", 3)
+    real = PageObject.extract_text
+    calls = 0
+
+    def flaky(self: Any, *args: Any, **kwargs: Any) -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise KeyError("/Resources")
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(PageObject, "extract_text", flaky)
+    document = StructuredPdfExtractor().extract_document(str(tmp_path / "doc.pdf"))
+    assert len(document.pages) == 3
+    assert document.report.unverified_pages == [2]
+    assert "Page 2" in document.to_markdown()
+
+
+def test_failed_pages_reach_the_summary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("reportlab")
+    import tar_rag.extractors.pdf_structured as structured
+
+    (tmp_path / "corpus").mkdir()
+    _pdf(tmp_path / "corpus" / "doc.pdf", 3)
+    real = structured._extract_page
+
+    def bad_page(page: Any, gap: float, drop_diagonal: bool) -> Any:
+        if page.page_number == 2:
+            raise ValueError("bad page")
+        return real(page, gap, drop_diagonal)
+
+    monkeypatch.setattr(structured, "_extract_page", bad_page)
+    records = DirectoryCrawler(tmp_path / "corpus", level_names=[]).crawl()
+    summary = ingest_documents(records, tmp_path / "out", level_names=[], corpus_version="v1")
+    assert summary.failed_pages == 1
+
+
+def test_cli_exit_code_shows_a_partial_ingest(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    root = tmp_path / "corpus" / "manuals"
+    root.mkdir(parents=True)
+    (root / "good.md").write_text("# Good\n\nFine.\n", encoding="utf-8")
+    (root / "broken.pdf").write_bytes(b"%PDF-1.4 this is not a pdf")
+    command = ["crawl", str(tmp_path / "corpus"), "--levels", "category", "--output", str(tmp_path / "out"), "--ingest", "--quiet"]
+    assert cli_main(command) == 3
+    assert "1 file(s) failed" in capsys.readouterr().err
+    assert (tmp_path / "out" / "unit_manifest.json").exists()
+
+
+def test_clean_ingest_still_exits_zero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    root = tmp_path / "corpus" / "manuals"
+    root.mkdir(parents=True)
+    (root / "good.md").write_text("# Good\n\nFine.\n", encoding="utf-8")
+    command = ["crawl", str(tmp_path / "corpus"), "--levels", "category", "--output", str(tmp_path / "out"), "--ingest", "--quiet"]
+    assert cli_main(command) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_truncated_html_table_keeps_its_rows() -> None:
+    document = parse_html("<table><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d")
+    assert document.tables[0].header == ["a", "b"]
+    assert document.tables[0].rows == [["c", "d"]]
+
+
+def test_html_table_with_omitted_end_tags_keeps_its_cells() -> None:
+    document = parse_html("<table><tr><td>a<td>b<tr><td>c<td>d</table><p>after</p>")
+    assert document.tables[0].header == ["a", "b"]
+    assert document.tables[0].rows == [["c", "d"]]
+    assert document.pages[0].blocks[-1] == "after"
+
+
+def test_html_nested_table_keeps_the_outer_rows() -> None:
+    document = parse_html(
+        "<table><tr><td>one</td><td>two</td></tr><tr><td><table><tr><td>in</td><td>ner</td></tr></table></td></tr></table>"
+    )
+    cells = [cell for table in document.tables for cell in table.header]
+    assert "one" in cells and "in" in cells
+
+
+def test_well_formed_html_table_is_unchanged() -> None:
+    document = parse_html("<table><tr><th>x</th><th>y</th></tr><tr><td>1</td><td>2</td></tr></table>")
+    assert document.tables[0].header == ["x", "y"]
+    assert document.tables[0].rows == [["1", "2"]]
+
+
+def test_bad_output_is_refused_before_anything_is_written(tmp_path: Path) -> None:
+    (tmp_path / "doc.md").write_text("# A\n", encoding="utf-8")
+    assert cli_main(["crawl", str(tmp_path), "--output", str(tmp_path / "out"), "--ingest", "--quiet"]) == 2
+    assert not (tmp_path / "out").exists()
+
+
+def test_small_unit_limit_is_refused_before_anything_is_written(tmp_path: Path) -> None:
+    (tmp_path / "corpus").mkdir()
+    (tmp_path / "corpus" / "doc.md").write_text("# A\n", encoding="utf-8")
+    command = ["crawl", str(tmp_path / "corpus"), "--output", str(tmp_path / "out"), "--ingest", "--max-unit-tokens", "10", "--quiet"]
+    assert cli_main(command) == 2
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize("budget", [120, 200, 400])
+def test_rendered_context_fits_the_budget(tmp_path: Path, budget: int) -> None:
+    sections = "".join(f"## Part {n}\n\nShort text for part number {n} of this guide.\n\n" for n in range(40))
+    output = _guide_corpus(tmp_path, f"# Guide\n\n{sections}")
+    rows = json.loads((output / "unit_manifest.json").read_text(encoding="utf-8"))["units"]
+    hits = [SearchResult(0.9 - n / 1000, "x", {"unit_id": row["unit_id"]}) for n, row in enumerate(rows)]
+    tar = TarRag.from_artifacts(output, adapter=FixedAdapter(hits))
+    bundle = tar.context_for(tar.search("zzqq nothing else matches"), max_tokens=budget)
+    assert bundle.unit_ids
+    assert estimate_tokens(bundle.text) <= bundle.tokens <= budget
+
+
+def test_budget_also_holds_with_no_unit_store() -> None:
+    hits = [SearchResult(0.9, f"plain snippet number {n} with a few more words", {}) for n in range(30)]
+    bundle = assemble_context(_outcome(hits), max_tokens=60)
+    assert bundle.text
+    assert estimate_tokens(bundle.text) <= bundle.tokens <= 60
+
+
+def test_cached_repeat_reuses_the_routed_evidence(corpus: tuple[Path, Path], tmp_path: Path) -> None:
+    _, output = corpus
+    adapter = RecordingAdapter()
+    tar = TarRag.from_artifacts(output, adapter=adapter, cache_root=tmp_path / "cache")
+    first = tar.search("how does the watchdog work")
+    calls = len(adapter.calls)
+    repeat = tar.search("how does the watchdog work")
+    assert repeat.cache_hit
+    assert len(adapter.calls) == calls
+    assert repeat.reason == first.reason == "section_route"
+    assert [result.snippet for result in repeat.results] == [result.snippet for result in first.results]
+
+
+@pytest.mark.asyncio
+async def test_async_cached_repeat_reuses_the_routed_evidence(corpus: tuple[Path, Path], tmp_path: Path) -> None:
+    _, output = corpus
+    adapter = RecordingAdapter()
+    tar = TarRag.from_artifacts(output, adapter=adapter, cache_root=tmp_path / "cache")
+    await tar.asearch("how does the watchdog work")
+    calls = len(adapter.calls)
+    assert (await tar.asearch("how does the watchdog work")).reason == "section_route"
+    assert len(adapter.calls) == calls
+
+
+def test_failed_routed_search_is_tried_again(corpus: tuple[Path, Path], tmp_path: Path) -> None:
+    _, output = corpus
+
+    class FailsOnSectionOnce(RecordingAdapter):
+        failed = False
+
+        def search(self, query: str, filters: dict[str, Any] | None, top_k: int) -> list[SearchResult]:
+            if filters and "section_2" in str(filters) and not self.failed:
+                self.failed = True
+                raise ConnectionError("store down")
+            return super().search(query, filters, top_k)
+
+    adapter = FailsOnSectionOnce()
+    tar = TarRag.from_artifacts(output, adapter=adapter, cache_root=tmp_path / "cache")
+    tar.search("how does the watchdog work")
+    assert tar.search("how does the watchdog work").reason == "section_route"
+
+
+@pytest.mark.asyncio
+async def test_async_context_leaves_the_event_loop(
+    corpus: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, output = corpus
+    tar = TarRag.from_artifacts(output, adapter=RecordingAdapter())
+    outcome = await tar.asearch("what does WDT_LOAD_VALUE do")
+    seen: list[int] = []
+    real = TarRag.context_for
+
+    def recording(self: TarRag, *args: Any, **kwargs: Any) -> Any:
+        seen.append(threading.get_ident())
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(TarRag, "context_for", recording)
+    bundle = await tar.acontext_for(outcome, max_tokens=500)
+    assert "sets the timeout" in bundle.text
+    assert seen and seen[0] != threading.get_ident()

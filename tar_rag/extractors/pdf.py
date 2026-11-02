@@ -1,6 +1,6 @@
 """PDF text extractor using ``pypdf``.
 
-Installed with tar-rag. ``pypdf>=5.4.0`` is the
+Installed with tar-rag. ``pypdf`` is the
 default PDF library; it's pure-Python, actively maintained, and
 extracts cleanly from the majority of PDFs. For complex layouts,
 scanned documents, or any case where pypdf output quality is

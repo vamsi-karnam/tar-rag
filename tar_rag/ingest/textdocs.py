@@ -140,6 +140,25 @@ class _HtmlReader(HTMLParser):
         if value:
             self.builder.line(value)
 
+    # HTML lets ``</td>`` and ``</tr>`` be left out, and a file can end inside a table.
+
+    def _close_cell(self) -> None:
+        if self._in_cell and self._row is not None:
+            self._row.append(self._take())
+        self._in_cell = False
+
+    def _close_row(self) -> None:
+        self._close_cell()
+        if self._rows is not None and self._row is not None:
+            self._rows.append(self._row)
+        self._row = None
+
+    def _close_table(self) -> None:
+        self._close_row()
+        if self._rows is not None:
+            self.builder.table(self._rows)
+        self._rows = None
+
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in _HTML_SKIP:
             self._skip += 1
@@ -149,11 +168,16 @@ class _HtmlReader(HTMLParser):
             self._flush_text()
             self._heading = int(tag[1]) - 1
         elif tag == "table":
+            self._close_table()  # a nested table: the outer rows are kept, and the two read in turn
             self._flush_text()
             self._rows = []
         elif tag == "tr" and self._rows is not None:
+            self._close_row()
             self._row = []
-        elif tag in {"td", "th"} and self._row is not None:
+        elif tag in {"td", "th"} and self._rows is not None:
+            self._close_cell()
+            if self._row is None:
+                self._row = []
             self._in_cell = True
         elif tag in _HTML_BREAKS and not self._in_cell:
             self._flush_text()
@@ -166,15 +190,12 @@ class _HtmlReader(HTMLParser):
         elif re.fullmatch(r"h[1-6]", tag) and self._heading is not None:
             self.builder.heading(self._heading, self._take())
             self._heading = None
-        elif tag in {"td", "th"} and self._row is not None:
-            self._row.append(self._take())
-            self._in_cell = False
-        elif tag == "tr" and self._rows is not None and self._row is not None:
-            self._rows.append(self._row)
-            self._row = None
-        elif tag == "table" and self._rows is not None:
-            self.builder.table(self._rows)
-            self._rows = None
+        elif tag in {"td", "th"}:
+            self._close_cell()
+        elif tag == "tr":
+            self._close_row()
+        elif tag == "table":
+            self._close_table()
         elif tag in _HTML_BREAKS and not self._in_cell:
             self._flush_text()
 
@@ -187,6 +208,7 @@ def parse_html(text: str) -> PdfDocument:
     reader = _HtmlReader()
     reader.feed(text)
     reader.close()
+    reader._close_table()
     reader._flush_text()
     return reader.builder.finish()
 

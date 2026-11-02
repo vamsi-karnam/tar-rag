@@ -21,6 +21,11 @@ layer is opt-in with `tar-rag crawl --ingest`. Measured results are in `benchmar
   identifier lookup to the normal folder search, and removes nothing. New `reason` values:
   `section_route` and `identifier_match`. An exact name sets `high` confidence only when at most 6
   units hold the query's spelling. Look-alikes rank after it and do not set `high`.
+- `tar-rag crawl --ingest` exits with `3` when the run finished but content is missing, and warns on
+  stderr even with `--quiet`. `IngestSummary.failed_pages` and `report.unverified_pages` are new.
+- `TarRag.acontext_for`, the async form of `context_for`. The token budget now counts document and
+  page labels, so the text sent stays within it.
+- A cached query reuses its section-routed results, so a repeat makes no store call.
 - **Safe re-ingest.** New output is built aside and swapped in at the end, so a run that stops early
   leaves the earlier output whole. `from_artifacts` warns and stays at folder level when the ingest
   artifacts and the corpus map come from different corpus versions.
@@ -49,6 +54,8 @@ layer is opt-in with `tar-rag crawl --ingest`. Measured results are in `benchmar
   README.
 - The minimum `openai` version is 1.66.0, `pinecone` 5.0.0 and `qdrant-client` 1.10.0. `QdrantAdapter`
   uses `query_points`.
+- Minimum versions are now `pypdf` 6.21.4, `pypdfium2` 5.9.0 and `pillow` 13.0.0, or 12.2.0 on Python
+  3.10, which has no newer Pillow. CI also runs real local Qdrant and Chroma, and lints `examples/`.
 - `[pdf]` and `[docx]` remain as no-op extras. Error messages no longer point to them.
 
 ### Fixed

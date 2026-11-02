@@ -319,7 +319,11 @@ in the OCR text. The trees are deterministic, with no LLM at any step.
 
 - The first query in a process also builds the word index in memory. That query took 3 to 8 seconds
   in total at about 5,000 units in our test. Later queries pay nothing, so run one query at startup
-  in a long-running service.
+  in a long-running service. `asearch()` does this work off the event loop, and `acontext_for()` is
+  the async form of `context_for()`.
+- `--ingest` exits with `3` when the run finished but a file or page is missing from the output.
+- Pinned `explicit_levels` are a search filter, not access control. The folder search can still widen
+  past a pin.
 - An exact name sets confidence to `high` when at most 6 units hold that spelling, so the gate no
   longer filters that query. A name used more widely, or found only as a look-alike, still leads the
   results but keeps the search's confidence, at `low` or above. Your answer prompt must let the LLM

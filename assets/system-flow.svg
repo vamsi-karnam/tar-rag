@@ -193,8 +193,8 @@ text{font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Ar
 <g data-box="624,684,288,60">
 <rect x="624" y="684" width="288" height="60" rx="8" class="b pr"/>
 <text x="636" y="702.0" class="t" text-anchor="start">Broaden</text>
-<text x="636" y="722.0" class="d" text-anchor="start">Run the wider filters in parallel. Keep the</text>
-<text x="636" y="738.0" class="d" text-anchor="start">first confident result, else the widest found.</text>
+<text x="636" y="722.0" class="d" text-anchor="start">Wider filters run in parallel. Keep the first</text>
+<text x="636" y="738.0" class="d" text-anchor="start">confident result with enough hits, else the widest.</text>
 </g>
 <path d="M584,714 L624,714" class="l flow" marker-end="url(#flow)" marker-start="url(#flow)"/>
 <path d="M784,744 L784,764" class="l flow" marker-end="url(#flow)"/>

@@ -171,6 +171,7 @@ class PdfExtractionReport:
     value_tokens: int = 0
     value_tokens_recovered: int = 0
     pages_with_lost_values: list[int] = field(default_factory=list)
+    unverified_pages: list[int] = field(default_factory=list)
 
     @property
     def conservation(self) -> float | None:
@@ -901,7 +902,12 @@ def _check_conservation(
     for raw in raw_pages:
         if raw.failed:
             continue
-        source = reader.pages[raw.number - 1].extract_text() or ""
+        try:
+            source = reader.pages[raw.number - 1].extract_text() or ""
+        except Exception:
+            # The check is a second opinion, so losing it must not lose the page.
+            report.unverified_pages.append(raw.number)
+            continue
         wanted = Counter(_VALUE_TOKEN_RE.findall(source))
         wanted.subtract(Counter(_VALUE_TOKEN_RE.findall("\n".join(unfiltered[raw.number]))))
         output = _page_output_values(raw)

@@ -48,6 +48,7 @@ class IngestSummary:
     failed: dict[str, str] = field(default_factory=dict)
     ocr_pages: int = 0
     needs_ocr_pages: int = 0
+    failed_pages: int = 0
 
 
 def _section_dict(node: SectionNode) -> dict[str, Any]:
@@ -80,6 +81,7 @@ def _document_map(
             "ocr_pages": report.ocr_pages,
             "needs_ocr_pages": report.needs_ocr_pages,
             "failed_pages": report.failed_pages,
+            "unverified_pages": report.unverified_pages,
             "pages_with_lost_values": report.pages_with_lost_values,
             "word_gap": report.word_gap,
             "stitched_tables": report.stitched_tables,
@@ -165,6 +167,7 @@ def ingest_documents(
             summary.units += len(units)
             summary.ocr_pages += len(document.report.ocr_pages)
             summary.needs_ocr_pages += len(document.report.needs_ocr_pages)
+            summary.failed_pages += len(document.report.failed_pages)
             (maps_dir / f"{record.doc_id}.json").write_text(
                 json.dumps(_document_map(record, document, tree, units), indent=1, ensure_ascii=False),
                 encoding="utf-8",

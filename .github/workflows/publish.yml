@@ -25,9 +25,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev,qdrant,chroma]"
       - run: pytest tests/ -m "not live" -q
-      - run: ruff check tar_rag tests
+      - run: ruff check tar_rag tests examples
 
   build:
     name: Build sdist + wheel

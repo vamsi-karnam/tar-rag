@@ -33,6 +33,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
 ]
 
@@ -40,10 +42,11 @@ classifiers = [
 # LLM client. tar-rag's adapters take a client you create, so install only the
 # one you use, or `tar-rag[all]`.
 dependencies = [
-    "pypdf>=5.4.0",
+    "pypdf>=6.21.4",
     "pdfplumber>=0.11.10",
-    "pypdfium2>=4.30.0",
-    "pillow>=10.0.0",
+    "pypdfium2>=5.9.0",
+    "pillow>=13.0.0; python_version >= '3.11'",
+    "pillow>=12.2.0; python_version < '3.11'",
     "tesserocr>=2.12.0",
     "python-docx>=1.0.0",
 ]

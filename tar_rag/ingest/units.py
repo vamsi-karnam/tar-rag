@@ -27,13 +27,17 @@ _SPLIT_WORD_RE = re.compile(r"[a-z]{2}-$")
 _FILTER_DEPTH = 4
 
 
+def tokens_for_chars(count: int) -> int:
+    return max(1, round(count / _CHARS_PER_TOKEN))
+
+
 def estimate_tokens(text: str) -> int:
     """Estimate a token count without a tokenizer dependency.
 
     The ratio is deliberately cautious: tables full of identifiers and hex
     values run denser than prose.
     """
-    return max(1, round(len(text) / _CHARS_PER_TOKEN))
+    return tokens_for_chars(len(text))
 
 
 @dataclass
@@ -132,6 +136,8 @@ def _title_matches(line: str, title_key: str) -> bool:
 def _find(items: list[_Item], title: str, page: int, start: int) -> int | None:
     """Return the index of ``title`` on ``page``, searching from ``start``."""
     key = normalize_title(title)
+    if not key:
+        return None  # a title of symbols matches nothing, so a scan would only cost time
     for index in range(start, len(items)):
         item = items[index]
         if item.page > page:

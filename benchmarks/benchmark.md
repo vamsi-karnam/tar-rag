@@ -1541,7 +1541,7 @@ answers do, and at what cost in tokens and time.
 - **The same for both.** `text-embedding-3-large` through OpenAI Vector Stores,
   `gpt-4o-mini` for answers, and the same answer prompt.
 - **Questions.** 100 unseen questions, written by an agent that saw neither version.
-  15 concern one confidential manual and are **left out of the tables below**, so 85
+  15 concern one private manual and are **left out of the tables below**, so 85
   remain: 30 table values, 25 procedures, 15 product-specific, 15 unanswerable.
 - **Grading.** Each answer scored 0, 1 or 2 by a grader that did not know which
   version wrote it. The versions took turns in batches of 10, and the code was frozen
