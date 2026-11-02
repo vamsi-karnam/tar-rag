@@ -1,12 +1,11 @@
-"""PDF text extractor using ``pypdf`` (optional dependency).
+"""PDF text extractor using ``pypdf``.
 
-Install with ``pip install "tar-rag[pdf]"``. ``pypdf>=5.4.0`` is the
+Installed with tar-rag. ``pypdf`` is the
 default PDF library; it's pure-Python, actively maintained, and
 extracts cleanly from the majority of PDFs. For complex layouts,
 scanned documents, or any case where pypdf output quality is
-insufficient, override the registry with a custom ``TextExtractor``
-(e.g. one built on ``pdfplumber``, ``pymupdf``, ``unstructured``, or
-``docling``).
+insufficient, override the registry with a custom ``TextExtractor``:
+``StructuredPdfExtractor`` keeps tables intact and handles long PDFs.
 """
 
 from __future__ import annotations
@@ -38,7 +37,7 @@ class PdfTextExtractor(TextExtractor):
         except ImportError as exc:
             raise MissingExtractorDependency(
                 "PdfTextExtractor requires the 'pypdf' package. "
-                "Install with: pip install \"tar-rag[pdf]\""
+                "Install with: pip install tar-rag"
             ) from exc
 
         try:

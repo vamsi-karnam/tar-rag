@@ -48,30 +48,30 @@ def test_build_produces_expected_top_level_keys() -> None:
 def test_tree_nests_three_levels_correctly() -> None:
     docs = [
         _doc(
-            "instruments/datawell/operator_manual/dwr.txt",
-            {"category": "instruments", "product": "datawell", "sub_type": "operator_manual"},
+            "instruments/acme/operator_manual/model_x.txt",
+            {"category": "instruments", "product": "acme", "sub_type": "operator_manual"},
         ),
         _doc(
-            "instruments/datawell/quick_start/qs.txt",
-            {"category": "instruments", "product": "datawell", "sub_type": "quick_start"},
+            "instruments/acme/quick_start/qs.txt",
+            {"category": "instruments", "product": "acme", "sub_type": "quick_start"},
         ),
     ]
     cmap = CorpusMapBuilder(["category", "product", "sub_type"]).build(docs)
     tree = cmap["tree"]
     assert "instruments" in tree
-    assert "datawell" in tree["instruments"][child_wrapper_key("product")]
-    sub_branch = tree["instruments"][child_wrapper_key("product")]["datawell"][
+    assert "acme" in tree["instruments"][child_wrapper_key("product")]
+    sub_branch = tree["instruments"][child_wrapper_key("product")]["acme"][
         child_wrapper_key("sub_type")
     ]
     assert set(sub_branch.keys()) == {"operator_manual", "quick_start"}
-    assert sub_branch["operator_manual"]["_documents"][0]["filename"] == "dwr.txt"
+    assert sub_branch["operator_manual"]["_documents"][0]["filename"] == "model_x.txt"
 
 
 def test_tree_attaches_partial_depth_docs_at_correct_level() -> None:
     docs = [
         _doc(
-            "instruments/triaxys/user_guide.txt",
-            {"category": "instruments", "product": "triaxys", "sub_type": None},
+            "instruments/globex/user_guide.txt",
+            {"category": "instruments", "product": "globex", "sub_type": None},
         ),
         _doc(
             "general/overview.txt",
@@ -79,8 +79,8 @@ def test_tree_attaches_partial_depth_docs_at_correct_level() -> None:
         ),
     ]
     cmap = CorpusMapBuilder(["category", "product", "sub_type"]).build(docs)
-    triaxys = cmap["tree"]["instruments"][child_wrapper_key("product")]["triaxys"]
-    assert triaxys["_documents"][0]["filename"] == "user_guide.txt"
+    globex = cmap["tree"]["instruments"][child_wrapper_key("product")]["globex"]
+    assert globex["_documents"][0]["filename"] == "user_guide.txt"
     general = cmap["tree"]["general"]
     assert general["_documents"][0]["filename"] == "overview.txt"
 

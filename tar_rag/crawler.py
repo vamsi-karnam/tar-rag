@@ -19,7 +19,7 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .errors import MissingExtractorDependency, UnsupportedFileType
@@ -29,6 +29,24 @@ from .models import DocumentRecord
 # ---------------------------------------------------------------------------
 # HierarchyExtractor interface
 # ---------------------------------------------------------------------------
+
+
+# Metadata keys that tar-rag stamps on every record or unit itself.
+_RESERVED_LEVEL_NAMES = frozenset(
+    {
+        "doc_id",
+        "source_path",
+        "unit_id",
+        "unit_kind",
+        "unit_source",
+        "page_start",
+        "page_end",
+        "section_1",
+        "section_2",
+        "section_3",
+        "section_4",
+    }
+)
 
 
 class HierarchyExtractor(ABC):
@@ -318,7 +336,7 @@ class DirectoryCrawler:
             extra_path=extra_path,
             checksum=checksum,
             size_bytes=stat.st_size,
-            last_modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            last_modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
             aliases=aliases,
             text_sample=text[: self.text_sample_chars] if self.text_sample_chars else "",
             extension=extension,
@@ -369,6 +387,8 @@ class DirectoryCrawler:
                 raise ValueError(f"level_names must contain non-empty strings, got: {name!r}")
             if name in seen:
                 raise ValueError(f"level_names contains duplicate entry: {name!r}")
+            if name in _RESERVED_LEVEL_NAMES:
+                raise ValueError(f"level_names cannot use the reserved name {name!r}")
             seen.add(name)
 
     @staticmethod

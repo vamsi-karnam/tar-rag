@@ -18,6 +18,9 @@ Both paths use the same vector store (`text-embedding-3-large`,
 OpenAI) and the same `top_k = 6`. The only thing that differs is
 whether the search is filtered to a topology branch.
 
+Benchmarks 1 to 3 measure retrieval with version 0.2.0. Benchmark 4 measures
+whole answers, end to end, between versions 0.2.0 and 0.3.0.
+
 ---
 
 ## What this benchmark is measuring
@@ -1519,3 +1522,102 @@ hash-only zero-content record that no threshold tuning can
 recover.
 
 *Net conclusion across all three benchmarks: the structural filter and the medium_min threshold are independent levers — the filter does the heavy lifting on semantically distinct corpora (where the threshold knob is idle) e.g. product guides / technical documentation, and the threshold tune does the heavy lifting on corpora with semantic continuity and ambiguity (where the filter alone leaves false positives in the medium band) e.g. code files / API documentation — so the right calibration choice is governed by the knowledge register of the corpus, not by tar-rag's shipped defaults.*
+
+---
+
+## Benchmark 4 — Version 0.3.0 against 0.2.0, end to end
+
+Benchmarks 1 to 3 ask whether retrieval improves. This one asks whether the
+answers do, and at what cost in tokens and time.
+
+### Setup
+
+- **Corpus.** A private corpus of 261 PDF technical manuals, which cannot be
+  redistributed. Many hold long tables, and some pages are images.
+- **Version 0.2.0.** Tag `v0.2.0`. Whole files uploaded to OpenAI Vector Stores,
+  with folder routing.
+- **Version 0.3.0.** `tar-rag crawl --ingest`, units uploaded one per file, folder
+  routing plus the file-level evidence, and `context_for` with its default budget.
+- **The same for both.** `text-embedding-3-large` through OpenAI Vector Stores,
+  `gpt-4o-mini` for answers, and the same answer prompt.
+- **Questions.** 100 unseen questions, written by an agent that saw neither version.
+  15 concern one private manual and are **left out of the tables below**, so 85
+  remain: 30 table values, 25 procedures, 15 product-specific, 15 unanswerable.
+  Five answers exist only inside images.
+- **Grading.** Each answer scored 0, 1 or 2 by a grader that did not know which
+  version wrote it. The versions took turns in batches of 10, and the code was frozen
+  before the run.
+
+### Results
+
+| Measure | 0.2.0 | 0.3.0 with `--ingest` |
+|---|---|---|
+| Points, of 170 | 130 | **138** |
+| Questions better, worse, same | | **13, 8, 64** |
+| Full marks | 58 | 64 |
+| Median input tokens per question | 2,832 | **2,384** (15.8% lower) |
+| Total input tokens | 226,055 | **193,808** (14.3% lower) |
+| Largest prompt, tokens | 4,653 | **4,077** |
+| Source document retrieved, of 70 | 65 | **70** |
+| Unanswerable questions declined, of 15 | 15 | 15 |
+| Median time per question | 2.26 s | 2.44 s |
+| 90th percentile time | 3.06 s | 4.21 s |
+| Build time | | about 3.5 times longer |
+
+Points by question type:
+
+| Type | 0.2.0 | 0.3.0 |
+|---|---|---|
+| Product-specific, of 30 | 28 | 27 |
+| Procedures, of 50 | 32 | **35** |
+| Table values, of 60 | 40 | **46** |
+| Unanswerable, of 30 | 30 | 30 |
+
+### Reading the results
+
+**Where it won.** Four of the 13 gains are answers that exist only inside images, read
+by OCR, which version 0.2.0 does not have. Most of the rest are procedures, where the
+answer now holds more of the steps. Version 0.3.0 retrieved the source document for
+every answerable question, against 65 of 70.
+
+**How much of the gain is OCR.** Most of it. On the 80 questions that are not answered
+only from images, both versions scored 130 of 160, with 9 better and 8 worse.
+
+**Where it lost.** Eight questions. In three, the context did not hold the answer, and
+one of those went through the small `low` confidence context. In the other five, the
+value or steps were in the context and the LLM missed or misread them. Version 0.3.0
+sends less text, a median of about 8,800 characters against 13,900, which leaves the
+LLM less surrounding text to work from.
+
+**Time.** Typical time is 8% longer, about 0.2 s. The 90th percentile is slower because
+the word index builds on the first query in each process, 3.0 to 4.5 s here, and this
+test started a new process for every 10 questions. A long-running service pays that
+cost once.
+
+**The gate.** Version 0.3.0's confidence gate declined none of the 15 unanswerable
+questions by itself, against 6 for version 0.2.0. The LLM declined them all, so the
+answer prompt did that work. Do not rely on the gate alone.
+
+### Limits
+
+- This is one corpus of one kind, and it cannot be shared, so nobody else can repeat
+  the run. Treat the figures as evidence from one test.
+- The gain is modest and not statistically proven. Across all 100 questions, including
+  the 15 left out, the score was 162 against 153 of 200, with 15 better and 9 worse:
+  sign test p = 0.31. On the 15 left out, 0.3.0 scored 24 against 23 of 30.
+- All six checks agreed before the run passed: points, better against worse, tokens,
+  time, unanswerable questions and no failed queries.
+- The largest prompt is above the 3,460 token budget, because that budget is an
+  estimate. A dense table held about 2.2 characters per token, against the 2.6 the
+  estimate assumes.
+- This was the fourth round. The first (40 questions) gave 3 better and 3 worse, with
+  29% fewer tokens. The second (100 new questions) gave 5 better and 7 worse, with 24%
+  fewer tokens. The losses were mostly incomplete lists, so neighbouring units, a larger
+  fetch and a larger budget were added, and four expert reviews led to further fixes.
+  The third (100 new questions) gave 178 against 165 of 200, 10 better and 3 worse. A
+  release review then changed retrieval, the budget and the cache, so this section was
+  measured again on the final code. An earlier version of this section reported the
+  third round, 150 against 136 of 170 on the public questions. Each round used different
+  questions, so the rounds cannot be compared directly.
+- Token counts cover the prompt sent to the LLM. Embedding costs are not included.
+- The build is slower: about 3.5 times longer for ingest and upload together.

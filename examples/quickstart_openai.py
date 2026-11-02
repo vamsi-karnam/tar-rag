@@ -61,7 +61,6 @@ def _load_dotenv(path: Path | str = ".env") -> None:
 _load_dotenv()
 import openai  # noqa: E402
 
-
 DEMO_QUERIES = (
     "What does asyncio.TaskGroup do in the source code?",
     "How do Python classes work according to the tutorial?",

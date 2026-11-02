@@ -62,9 +62,9 @@ class QdrantAdapter(AbstractVectorStoreAdapter):
     ) -> list[SearchResult]:
         vector = self.embed_fn(query)
         native_filter = self.translate_filter(filters)
-        response = self.client.search(
+        response = self.client.query_points(
             collection_name=self.collection_name,
-            query_vector=vector,
+            query=vector,
             query_filter=native_filter,
             limit=max(1, int(top_k)),
             with_payload=True,
@@ -81,9 +81,9 @@ class QdrantAdapter(AbstractVectorStoreAdapter):
             return await super().asearch(query, filters, top_k)
         vector = self.embed_fn(query)
         native_filter = self.translate_filter(filters)
-        response = await self.async_client.search(
+        response = await self.async_client.query_points(
             collection_name=self.collection_name,
-            query_vector=vector,
+            query=vector,
             query_filter=native_filter,
             limit=max(1, int(top_k)),
             with_payload=True,

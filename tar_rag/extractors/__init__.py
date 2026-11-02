@@ -7,6 +7,7 @@ The public surface here is what users typically import:
         TextExtractor,
         PlainTextExtractor,
         PdfTextExtractor,
+        StructuredPdfExtractor,
         DocxTextExtractor,
         HtmlTextExtractor,
         JsonTextExtractor,
@@ -17,7 +18,9 @@ The public surface here is what users typically import:
 from .base import TextExtractor
 from .docx import DocxTextExtractor
 from .html import HtmlTextExtractor
+from .ocr import TesseractOcr
 from .pdf import PdfTextExtractor
+from .pdf_structured import PdfDocument, PdfLine, StructuredPdfExtractor
 from .plaintext import PlainTextExtractor
 from .registry import ExtractorRegistry
 from .structured import CsvTextExtractor, JsonTextExtractor
@@ -28,7 +31,11 @@ __all__ = [
     "ExtractorRegistry",
     "HtmlTextExtractor",
     "JsonTextExtractor",
+    "PdfDocument",
+    "PdfLine",
     "PdfTextExtractor",
     "PlainTextExtractor",
+    "StructuredPdfExtractor",
+    "TesseractOcr",
     "TextExtractor",
 ]

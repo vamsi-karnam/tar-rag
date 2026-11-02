@@ -1,8 +1,8 @@
 """tar-rag: Topology-Aware Retrieval for RAG.
 
 Vector-store-agnostic library that adds structural navigation to RAG
-retrieval pipelines through directory-derived topology maps and
-progressive filter fallback.
+retrieval pipelines, from directory-derived topology maps down to the
+sections inside each file, with progressive filter fallback.
 
 Public API surface::
 
@@ -18,6 +18,15 @@ Public API surface::
         MetadataManifest,
         SearchPlanBuilder,
         ConfidenceConfig,
+
+        # File-level ingest
+        ingest_documents,
+        StructuredPdfExtractor,
+        TesseractOcr,
+        build_document_tree,
+        build_units,
+        Unit,
+        ContextBundle,
 
         # Query phase
         ContextResolver,
@@ -64,7 +73,9 @@ from .errors import (
     TarRagError,
     UnsupportedFileType,
 )
+from .extractors import StructuredPdfExtractor, TesseractOcr
 from .facade import TarRag
+from .ingest import ContextBundle, Unit, build_document_tree, build_units, ingest_documents
 from .manifest import ManifestDocument, MetadataManifest
 from .models import (
     ConversationTurn,
@@ -82,7 +93,7 @@ from .search_plan import (
     SearchPlanTemplate,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"
 
 __all__ = [
     # Version
@@ -106,6 +117,14 @@ __all__ = [
     "ContextResolver",
     "RetrievalOrchestrator",
     "RetrievalCache",
+    # File-level ingest
+    "StructuredPdfExtractor",
+    "TesseractOcr",
+    "ingest_documents",
+    "build_document_tree",
+    "build_units",
+    "Unit",
+    "ContextBundle",
     # Artifacts
     "ArtifactBundle",
     "ArtifactPaths",

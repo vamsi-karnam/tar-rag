@@ -1,3 +1,24 @@
+# Pinecone, Qdrant and Chroma integration
+
+These examples upload whole documents through your own chunker. Install the
+client first, for example `pip install "tar-rag[qdrant]"`.
+
+To upload the units from `tar-rag crawl --ingest` instead, replace the loop over
+`manifest` with a loop over `unit_manifest.json`, and skip your chunker:
+
+```python
+import json
+from pathlib import Path
+
+base = Path("./tar_rag_output")
+units = json.loads((base / "unit_manifest.json").read_text(encoding="utf-8"))["units"]
+for row in units:
+    text = (base / row["path"]).read_text(encoding="utf-8")
+    metadata = row["metadata"]   # store this beside the vector, with no change
+```
+
+See [File-level ingest](how-to-guide.md#file-level-ingest) for what the metadata holds.
+
 #### Pinecone
 
 ```python

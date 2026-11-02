@@ -5,7 +5,8 @@
 **License:** Apache License 2.0
 
 **Topology-Aware Retrieval for RAG** — a vector-store-agnostic Python
-library that adds structural navigation to any RAG pipeline.
+library that adds structural navigation to any RAG pipeline, from the folders
+of a corpus down to the sections inside each file.
 
 ---
 
@@ -26,13 +27,21 @@ starts it builds a topology map from your corpus's directory layout. At query
 time it scores each branch of that map lexically against the query and produces
 a **heat map**: the hottest branches go first, the rest cool off. ANN search
 runs scoped to the hottest branch, and the filter only broadens if confidence
-isn't high enough — exiting as soon as a confident answer is found. See [example](#high-level-example). 
+isn't high enough — exiting as soon as a confident answer is found. See [example](#high-level-example).
+
+`tar-rag` can also look inside the files. `tar-rag crawl --ingest` reads each
+document, builds a section tree from its bookmarks or headings, and cuts it into
+units that keep tables whole. Routing then reaches the section inside a file,
+exact names such as `IRQ_ENABLE` go straight to their units, and the context for
+your LLM stays within a token budget. It is built for long, table-heavy PDFs, and
+reads scanned pages with Tesseract OCR. See
+[File-level topology](#file-level-topology).
 
 > **Advantage.** No extra LLM call, no per-query token cost, sub-millisecond on the hot path, no hallucination, fully deterministic.
 
-> **Environment.** `tar-rag` does **not** own embeddings, chunking, the vector store, or the LLM.
-> It owns one thing: deciding where retrieval should start, and gating weak
-> results before they ever reach your LLM.
+> **Environment.** `tar-rag` does **not** own embeddings, the vector store, or the LLM, and it
+> needs no API key. Without `--ingest` it leaves chunking to you as well. It owns one thing:
+> deciding where retrieval should start, and gating weak results before they ever reach your LLM.
 
 > **Assumption.** Filesystem hierarchy correlates with semantic structure.
 > This is the default state for documentation portals, source repos, SOP
@@ -54,14 +63,14 @@ isn't high enough — exiting as soon as a confident answer is found. See [examp
 9. Filesystem-organized corpora
 10. Code / documentation RAG
 
-
 ---
 
 ## System architecture
 
 `tar-rag` is three user-driven steps that interconnect via two pieces of
 shared state: the artifact files written by the crawl, and the vector
-store populated by your upload script.
+store populated by your upload script. The steps marked `--ingest` are the
+file-level layer, and everything else works without them.
 
 ```mermaid
 %%{init: {
@@ -88,6 +97,8 @@ flowchart LR
         CORPUS[("./corpus<br/>directory tree")] --> CR["tar-rag crawl"]
         CR --> AQ[("corpus_map.json<br/>search_plan_template.json<br/>confidence_config.json")]
         CR --> AM[("metadata_manifest.json")]
+        CR -- "--ingest" --> ING["read files · OCR<br/>section trees · units"]
+        ING --> AU[("document_maps/ · units/<br/>unit_manifest.json<br/>identifier_index.json")]
     end
 
     subgraph S2["2 — Upload  (your script)"]
@@ -100,12 +111,16 @@ flowchart LR
         Q[user query] --> TR["TarRag.search()"]
         TR --> RESOLVE["resolve query → hottest branch"]
         RESOLVE --> ANN["filtered ANN search<br/>broaden if needed"]
-        ANN --> GATE{confidence ≥<br/>threshold?}
-        GATE -- yes --> OUT["chunks → your LLM"]
+        ANN --> ADD["--ingest: add section route,<br/>word matches, exact names"]
+        ADD --> GATE{confidence ≥<br/>threshold?}
+        GATE -- yes --> CTX["context_for()<br/>best units within a token budget"]
+        CTX --> OUT["chunks → your LLM"]
         GATE -- no --> ZERO["0 chunks<br/>token gate fires"]
     end
 
     AM -. feeds .-> UPSCRIPT
+    AU -. feeds .-> UPSCRIPT
+    AU -. loaded at startup .-> ADD
     AQ -. loaded at startup .-> TR
     VS <-. filtered ANN .-> ANN
 
@@ -116,9 +131,9 @@ flowchart LR
     classDef out      fill:#6b21a8,stroke:#e9d5ff,stroke-width:2.5px,color:#ffffff;
     classDef gate     fill:#7f1d1d,stroke:#fca5a5,stroke-width:2px,color:#ffffff;
 
-    class AQ,AM artifact;
+    class AQ,AM,AU artifact;
     class VS store;
-    class CORPUS,CR,UPSCRIPT,Q,TR,RESOLVE,ANN process;
+    class CORPUS,CR,ING,UPSCRIPT,Q,TR,RESOLVE,ANN,ADD,CTX process;
     class GATE decision;
     class OUT out;
     class ZERO gate;
@@ -136,6 +151,16 @@ per user request and is the only one in the hot path. The full diagram
 with the parallel fallback chain and per-attempt confidence scoring
 lives in [`examples/how-to-guide.md`](examples/how-to-guide.md#architecture-detail).
 
+`context_for()` also lets three units through at `low` confidence, so that your
+LLM can answer from them or decline. At `none` it returns nothing.
+
+### End-to-end flow
+
+The same three steps in full, from your documents to the reply, with a generic
+vector store. Open the image for full size.
+
+![End-to-end flow of tar-rag. Step 1, crawl: tar-rag crawl reads a directory tree of documents and writes the crawl artifacts. With --ingest it also reads each file, runs OCR, builds section trees, writes units and indexes exact names. Step 2, upload: your script stores chunks or units in a vector store. Step 3, query: the user query is resolved to the hottest branch, searched with filters from most specific to global, and enriched with file-level evidence. Confidence then decides between full context, three units, or zero chunks, and the context goes to your LLM.](assets/system-flow.svg)
+
 ---
 
 ## Install
@@ -144,10 +169,22 @@ lives in [`examples/how-to-guide.md`](examples/how-to-guide.md#architecture-deta
 pip install tar-rag
 ```
 
-That's it. The default install includes every bundled vector-store adapter
-(OpenAI, Pinecone, Qdrant, Chroma) and every file extractor (PDF, DOCX,
-HTML, JSON, CSV, plaintext / source code) — `tar-rag` works out of the box
-with whichever combination you reach for.
+The core install covers crawling, ingest, OCR and routing, for PDF, DOCX, HTML,
+JSON, CSV, plaintext and source code. It installs no vector store or LLM client.
+The adapters take a client you create, so add the one you use:
+
+```bash
+pip install "tar-rag[openai]"     # or pinecone, qdrant, chroma
+pip install "tar-rag[all]"        # all four
+```
+
+> **Upgrading from 0.2.** The default install no longer pulls these clients. Add
+> the extra you need. `[pdf]` and `[docx]` still resolve and do nothing.
+
+Tesseract comes through `tesserocr`, a required dependency with wheels for Windows
+x64, Linux x86_64 and arm64, Alpine x86_64 and macOS 15. On other platforms
+`pip install` builds it from source, which needs the Tesseract and Leptonica
+development libraries.
 
 ---
 
@@ -199,13 +236,13 @@ metadata filter derived deterministically from the query.
 
 > See [`examples/how-to-guide.md`](examples/how-to-guide.md) for the quickstart
 > and full Python API. See [`benchmarks/benchmark.md`](benchmarks/benchmark.md)
-> for measured comparisons against an unfiltered baseline on real corpora.
+> for measured comparisons on real corpora.
 
 ---
 
 ## Supported file types
 
-- **PDF** (`pypdf`)
+- **PDF** (`pypdf` for a plain crawl, `StructuredPdfExtractor` with `--ingest`)
 - **DOCX** (`python-docx`)
 - **HTML** (`.html`, `.htm` — stdlib `html.parser`)
 - **Structured** (`.json`, `.csv` — stdlib)
@@ -218,6 +255,125 @@ All extractors are pluggable via the `TextExtractor` interface — swap in
 `pdfplumber`, `pymupdf`, `unstructured`, or anything custom by overriding
 the registry. See [`examples/how-to-guide.md`](examples/how-to-guide.md#custom-extractors).
 
+With `--ingest`, PDF, Markdown, HTML and DOCX get a section tree. Every other
+type becomes one or more units with no sections.
+
+---
+
+## File-level topology
+
+Folder routing finds the right document. `--ingest` finds the right part of it.
+
+```bash
+tar-rag crawl ./corpus --levels category,product --output ./tar_rag_output --ingest
+```
+
+The output folder must sit outside the corpus. Next to the four usual artifacts, this writes:
+
+| Artifact | What it holds |
+|---|---|
+| `document_maps/<doc_id>.json` | The section tree of one file, and its extraction report |
+| `units/<doc_id>/<n>.md` | One text file per unit, 800 tokens at most by default |
+| `unit_manifest.json` | Every unit with the metadata to store beside it |
+| `identifier_index.json` | Exact names, such as `IRQ_ENABLE` or `AB-1234`, and the units that hold them |
+
+Upload the units instead of the raw files. Each row of `unit_manifest.json` gives a file and the
+metadata to stamp on it, including `doc_id`, `unit_id` and the filter keys `section_1` to `section_4`.
+[`examples/upload_units_openai.py`](examples/upload_units_openai.py) does this for OpenAI, and any
+other store works the same way. Then query as usual, and ask for the context:
+
+```python
+tar = TarRag.from_artifacts("./tar_rag_output/", adapter=adapter)
+
+result = tar.search("What does the IRQ_ENABLE field do?")
+bundle = tar.context_for(result)    # default budget: 3460 tokens
+
+bundle.text        # ready for your prompt, grouped by document, in reading order
+bundle.tokens      # estimated tokens used
+bundle.unit_ids    # the units it holds, for citations
+bundle.skipped     # units left out by the budget
+bundle.has_ocr     # some text came from OCR, so tell your LLM to allow for misreads
+```
+
+`TarRag` finds these artifacts by itself, and fetches 12 results instead of 6 because units are
+smaller than file chunks. Retrieval then adds evidence to the normal folder search, and takes nothing
+away:
+
+1. **Section route.** Section titles are scored against the query, with each word weighted by its
+   rarity. A strong match adds a search filtered to that section.
+2. **Word matches.** A BM25 index over the units adds what meaning-based search misses.
+3. **Exact names.** A name in the identifier index puts its units first, with the query's own
+   spelling ahead of look-alikes.
+
+`result.reason` tells you which ran last: `section_route`, `identifier_match`, or a folder-level reason.
+
+The context then takes the first hits, the rest of any section split on size, the units beside those
+hits, and the remaining hits, until the budget is spent. Repeated text is dropped, so copies of a
+document cost nothing.
+
+Each file gets the best tree it supports: its bookmarks if they reach at least half of the file,
+otherwise detected headings, otherwise windows of 10 pages. Scanned files use numbered headings found
+in the OCR text. The trees are deterministic, with no LLM at any step.
+
+**Know before you rely on it:**
+
+- The first query in a process also builds the word index in memory. That query took 3 to 8 seconds
+  in total at about 5,000 units in our test. Later queries pay nothing, so run one query at startup
+  in a long-running service. `asearch()` does this work off the event loop, and `acontext_for()` is
+  the async form of `context_for()`.
+- `--ingest` exits with `3` when the run finished but a file or page is missing from the output.
+- Pinned `explicit_levels` are a search filter, not access control. The folder search can still widen
+  past a pin.
+- An exact name sets confidence to `high` when at most 6 units hold that spelling, so the gate no
+  longer filters that query. A name used more widely, or found only as a look-alike, still leads the
+  results but keeps the search's confidence, at `low` or above. Your answer prompt must let the LLM
+  say it does not know.
+- Keep the ingest artifacts and the corpus map from the same run. On a version mismatch,
+  `from_artifacts` warns, ignores the ingest artifacts and stays at folder level.
+- Resync your store after a re-ingest. A stored unit that the manifest no longer lists still reaches
+  the LLM with its stored text.
+- Ingest is slower than a plain crawl. Our 261-PDF test took about 9 minutes, and uploading one file
+  per unit took about 25 minutes.
+
+---
+
+## Long PDFs with tables
+
+The default PDF extractor flattens a page to plain text, which is enough for aliases. For long,
+table-heavy documents, `--ingest` uses `StructuredPdfExtractor`, and you can call it directly. It
+keeps every table as a table and tells you how far to trust the result:
+
+```python
+from tar_rag.extractors import StructuredPdfExtractor
+
+document = StructuredPdfExtractor().extract_document("manual.pdf")
+
+document.tables[0].to_markdown()    # one logical table, stitched across pages
+document.outline                    # the PDF's bookmarks: title, level, page
+document.to_markdown()              # the whole file, with page markers
+document.report.conservation        # share of numbers and hex values found again by a second parser
+document.report.ocr_pages           # pages read by OCR, because they had no text layer
+```
+
+It handles missing space characters, diagonal watermarks, repeated headers and footers, spanned cells,
+grouped headers, tables crossing page breaks, multi-column pages, and 90-degree labels. On Windows,
+call it under `if __name__ == "__main__":`, because it uses worker processes.
+
+Scanned pages are read by Tesseract, which installs with `tar-rag`, and the English model ships
+with it. Nothing leaves your machine. OCR runs on pages with graphics and no text layer, pages that are
+mostly one image, and pages whose text layer is garbled. Blank pages are skipped. Pass `lang=` and
+`tessdata_dir=` to `TesseractOcr` for another language. Pass any other engine as `ocr=`: a callable
+taking PNG bytes and a page number and returning text.
+
+OCR returns text, not a table grid, so a table on a scanned page becomes lines of text, and blank
+cells can shift. It can also misread similar characters, such as `1` for `I` or `0` for `O`.
+`tar-rag` reports no confidence score for OCR text, so check values that matter against the source
+page. Exact-name lookup folds these look-alike characters, and `bundle.has_ocr` marks the context
+that holds such text.
+
+It finds tables from ruling lines, so a table drawn without lines stays as text. A horizontal watermark
+across the page body is not removed.
+
 ---
 
 ## Vector store invariance
@@ -226,7 +382,7 @@ the registry. See [`examples/how-to-guide.md`](examples/how-to-guide.md#custom-e
 internals. The contract is small: during upload you stamp each chunk with
 metadata from `metadata_manifest.json`; at query time an adapter translates
 `tar-rag`'s filter dict into your store's native filter format. Four adapters
-ship in the box — OpenAI, Pinecone, Qdrant, Chroma — plus an in-memory
+ship with the package — OpenAI, Pinecone, Qdrant, Chroma — plus an in-memory
 adapter for tests. Writing a custom one is a single class with a single
 method; see
 [`examples/how-to-guide.md`](examples/how-to-guide.md#custom-vector-store-adapter).
@@ -261,7 +417,8 @@ Because the topology filter is just a metadata predicate, the orchestrator
 scales with your vector store rather than against it — most stores apply
 metadata pre-filters inside the ANN path, shrinking the candidate pool to
 the relevant subtree rather than scanning the whole index. The crawl phase
-is one-shot per corpus version; query-time overhead is sub-millisecond.
+is one-shot per corpus version. Folder routing adds sub-millisecond overhead at
+query time. Ingest adds a word index that builds once on the first query.
 
 The crawl scales linearly with corpus size and is I/O-bound on file reads
 and extractor cost. A retrieval cache keyed by
@@ -275,14 +432,59 @@ The same crawl handles trees where different branches sit at different
 depths — no preprocessing required. Given `--levels category,product,sub_type`,
 a document at `general/overview.md` resolves with `product=None,
 sub_type=None` and attaches at the `general` node; a document at
-`instruments/triaxys/user_guide.md` resolves with `sub_type=None` and
+`instruments/globex/user_guide.md` resolves with `sub_type=None` and
 attaches one level deeper; a document at
-`instruments/datawell/operator_manual/dwr.md` fills all three levels.
+`instruments/acme/operator_manual/model_x.md` fills all three levels.
 At query time the search-plan builder skips any unresolved (None) level
 when composing filters and dedupes attempts that would fire identical
 filters, so a shallow context doesn't waste calls. Anything deeper than
 the declared level count is captured on `DocumentRecord.extra_path` and
 is not lost.
+
+---
+
+## Measured results
+
+Version 0.3.0 with `--ingest` against version 0.2.0, end to end, on a private corpus of 261 PDF
+technical manuals. Both used the same embedding model and the same LLM (`gpt-4o-mini`), and answered
+85 questions that neither had seen. An outside agent wrote the questions, a blind grader scored each
+answer from 0 to 2, and the code was frozen first.
+
+| Measure | 0.2.0 | 0.3.0 with `--ingest` |
+|---|---|---|
+| Points, of 170 | 130 | **138** |
+| Questions better, worse, same | | **13, 8, 64** |
+| Full marks | 58 | 64 |
+| Median input tokens per question | 2,832 | **2,384** (15.8% lower) |
+| Total input tokens | 226,055 | **193,808** (14.3% lower) |
+| Largest prompt, tokens | 4,653 | **4,077** |
+| Source document retrieved, of 70 | 65 | **70** |
+| Unanswerable questions declined, of 15 | 15 | 15 |
+| Median time per question | 2.26 s | 2.44 s |
+| 90th percentile time | 3.06 s | 4.21 s |
+| Build time | | about 3.5 times longer |
+
+Fewer tokens, the source document found every time, and answers from image pages that 0.2.0 cannot
+read, at the cost of a longer build and a slightly longer typical time. Most of the gain in points
+comes from those image pages: on the other 80 questions, both versions scored 130. The slower 90th
+percentile comes from the first-query index build, because this test started a new process for
+every 10 questions. This is one corpus, and it cannot be shared. Details and limits are in
+[`benchmarks/benchmark.md`](benchmarks/benchmark.md#benchmark-4--version-030-against-020-end-to-end).
+
+---
+
+## Security
+
+- **Documents are untrusted input.** Text from your corpus reaches your LLM, and a document can hold
+  instructions written to steer it (prompt injection). `tar-rag` does not detect or remove these.
+  Keep retrieved text apart from your system prompt, mark it as data, and do not let it trigger tools
+  or actions by itself.
+- **`tar-rag` makes no network calls of its own**, reads no API key, and sends nothing anywhere.
+  Your adapter talks to your store with the client you gave it.
+- **The output folder holds your corpus text in clear.** So does a disk cache set with `cache_root`.
+  Protect both as you protect the corpus, and do not publish them.
+- **Parsing runs native code.** PDF and OCR libraries process each file. For files from people you do
+  not trust, run ingest in a sandbox with limits on time and memory.
 
 ---
 
@@ -304,12 +506,15 @@ tar-rag/
 │   ├── facade.py               #   TarRag (the high-level entry point)
 │   ├── artifacts.py            #   build_artifacts() — produces all 4 files
 │   ├── cli.py                  #   `tar-rag` CLI entry point
-│   ├── extractors/             #   PDF, DOCX, plaintext, HTML, JSON, CSV, registry
+│   ├── extractors/             #   PDF, structured PDF, OCR, DOCX, plaintext, HTML, JSON, CSV, registry
+│   ├── ingest/                 #   section trees, units, identifiers, section routing, context
+│   ├── data/tessdata/          #   English OCR model
 │   └── adapters/               #   OpenAI, Pinecone, Qdrant, Chroma, in-memory, base
 ├── examples/                   # Quickstart + integration material
 │   ├── how-to-guide.md         #   developer-facing how-to (quickstart, tuning, adapters, async)
 │   ├── quickstart_openai.py    #   end-to-end runnable example against OpenAI Vector Stores
 │   ├── upload_openai.py        #   production-ready upload script (idempotent re-uploads)
+│   ├── upload_units_openai.py  #   upload the units from `crawl --ingest`
 │   ├── integration_openai.md   #   OpenAI integration walk-through
 │   ├── integration_other.md    #   Pinecone / Qdrant / Chroma walk-through
 │   ├── corpus/                 #   small canonical demo corpus for offline runs
@@ -323,9 +528,11 @@ tar-rag/
 │   └── README_PYPI.md          #   short long-description shown on the PyPI project page
 ├── tests/                      # Offline + live test suites
 ├── .github/workflows/          # CI (tests + lint) + publish (TestPyPI → PyPI via OIDC)
+├── assets/                     # README images
 ├── README.md                   # This file
 ├── CHANGELOG.md
 ├── LICENSE
+├── THIRD_PARTY_NOTICES         # Licences of what ships with or runs under tar-rag
 └── pyproject.toml              # Package metadata; readme = "pypi/README_PYPI.md"
 ```
 
@@ -377,9 +584,10 @@ discriminative query vector, which directly improves top-K precision.
 1. **Stuffing `chunk.metadata` into the prompt as JSON blobs.** Easily 2×
    prompt token count. Use Pattern B with one short key, or append source
    pointers as a footnote only when the user clicks "view sources."
-2. **Forwarding chunks even at low confidence "just in case."** Undoes the
-   gate entirely. If `result.confidence in {"low", "none"}`, the correct
-   behaviour is "tell the user no good answer was found."
+2. **Forwarding everything at low confidence "just in case."** Undoes the
+   gate entirely. If `result.confidence` is `"none"`, tell the user no good
+   answer was found. At `"low"`, `context_for()` sends only three units, so
+   your LLM can decline. Build your own context the same way.
 3. **Caching the wrong layer.** Cache LLM responses keyed by raw user
    query and two phrasings of the same question miss the cache.
    `tar-rag`'s `RetrievalCache` is keyed by

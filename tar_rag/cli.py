@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -102,6 +103,23 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Skip files whose extractor returns empty text",
     )
     crawl.add_argument(
+        "--ingest",
+        action="store_true",
+        help="Also build section maps, units and the identifier index",
+    )
+    crawl.add_argument(
+        "--max-unit-tokens",
+        type=int,
+        default=800,
+        help="Token limit for one unit when --ingest is set (default: 800)",
+    )
+    crawl.add_argument(
+        "--workers",
+        type=int,
+        default=min(4, os.cpu_count() or 1),
+        help="Worker processes for --ingest (default: up to 4)",
+    )
+    crawl.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress non-error output",
@@ -109,11 +127,21 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# The crawl and ingest finished, and some content is missing from the output.
+_EXIT_INCOMPLETE = 3
+
+
 def _run_crawl(args: argparse.Namespace) -> int:
     root = Path(args.root).expanduser().resolve()
     output = Path(args.output).expanduser().resolve()
     if not root.exists() or not root.is_dir():
         print(f"error: crawl root not found or not a directory: {root}", file=sys.stderr)
+        return 2
+    if args.ingest and (output == root or root in output.parents):
+        print("error: --output must be outside the corpus root with --ingest", file=sys.stderr)
+        return 2
+    if args.ingest and args.max_unit_tokens < 50:
+        print("error: --max-unit-tokens must be at least 50", file=sys.stderr)
         return 2
 
     crawler = DirectoryCrawler(
@@ -134,14 +162,53 @@ def _run_crawl(args: argparse.Namespace) -> int:
     bundle = build_artifacts(documents, level_names=resolved_levels)
     paths = bundle.write(output)
 
-    summary = {
+    ingest: dict[str, object] | None = None
+    problems: list[str] = []
+    if args.ingest:
+        from .extractors import StructuredPdfExtractor
+        from .ingest import ingest_documents
+
+        result = ingest_documents(
+            documents,
+            output,
+            level_names=resolved_levels,
+            corpus_version=bundle.manifest.version,
+            max_tokens=args.max_unit_tokens,
+            pdf_extractor=StructuredPdfExtractor(max_workers=args.workers),
+        )
+        ingest = {
+            "documents": result.documents,
+            "units": result.units,
+            "identifiers": result.identifiers,
+            "ocr_pages": result.ocr_pages,
+            "needs_ocr_pages": result.needs_ocr_pages,
+            "failed_pages": result.failed_pages,
+            "failed": result.failed,
+        }
+        counts = (
+            (len(result.failed), "file(s) failed"),
+            (result.failed_pages, "page(s) failed"),
+            (result.needs_ocr_pages, "page(s) need OCR"),
+        )
+        problems = [f"{count} {what}" for count, what in counts if count]
+
+    summary: dict[str, object] = {
         "document_count": len(documents),
         "corpus_version": bundle.manifest.version,
         "level_names": resolved_levels,
         "artifacts": {key: str(value) for key, value in paths.as_dict().items()},
     }
+    if ingest is not None:
+        summary["ingest"] = ingest
+    exit_code = _EXIT_INCOMPLETE if problems else 0
+    if problems:
+        print(
+            f"warning: ingest is incomplete: {', '.join(problems)}. "
+            "See unit_manifest.json and document_maps/ for details.",
+            file=sys.stderr,
+        )
     if args.quiet:
-        return 0
+        return exit_code
     print(json.dumps(summary, indent=2))
     print()
     print(f"Wrote 4 artifact file(s) to {output}.")
@@ -152,9 +219,9 @@ def _run_crawl(args: argparse.Namespace) -> int:
         "knob to tune for a new corpus + embedding model combination. "
         "Defaults work out of the box; advanced users can edit it now "
         "to align thresholds with their embedding model's score "
-        "distribution (see the Tuning section of the README)."
+        "distribution (see the Tuning section of examples/how-to-guide.md)."
     )
-    return 0
+    return exit_code
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -163,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "crawl":
             return _run_crawl(args)
-    except TarRagError as exc:
+    except (TarRagError, OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     parser.error(f"unknown command: {args.command}")
