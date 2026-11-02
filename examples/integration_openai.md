@@ -7,11 +7,11 @@ endpoints.
 ## 1. Install
 
 ```bash
-pip install "tar-rag[openai,pdf]"
+pip install "tar-rag[openai]"
 ```
 
-The `openai` extra pulls the `openai` Python client. The `pdf` extra
-pulls `pypdf` so the crawler can extract text from PDF documents.
+The `openai` extra pulls the `openai` Python client. PDF, DOCX and OCR
+support come with `tar-rag` itself.
 
 ## 2. Organise your corpus
 
@@ -21,15 +21,15 @@ your folder hierarchy becomes a filter dimension at query time. Example:
 ```
 corpus/
 ├── instruments/
-│   ├── datawell/
+│   ├── acme/
 │   │   ├── operator_manual/
-│   │   │   └── dwr_mkiii.pdf
+│   │   │   └── model_x.pdf
 │   │   └── quick_start/
-│   │       └── dwr_mkiii_qs.pdf
-│   └── triaxys/
+│   │       └── model_x_qs.pdf
+│   └── globex/
 │       └── user_guide.pdf
 └── software/
-    └── wavemonitor/
+    └── dashboard/
         └── README.md
 ```
 
@@ -89,6 +89,29 @@ The script:
 4. Polls until OpenAI's background indexer reports all files as completed
 5. Writes `active_state.json` with the resulting vector store id
 
+### Long documents: upload units
+
+For long PDFs, crawl with `--ingest` and upload the units in place of the
+raw files. OpenAI then chunks text that `tar-rag` has already cut along
+section boundaries, with tables kept whole:
+
+```bash
+tar-rag crawl ./corpus \
+    --levels category,product,sub_type \
+    --output ./tar_rag_output/ \
+    --ingest
+
+python examples/upload_units_openai.py --output-dir ./tar_rag_output --name my-kb
+```
+
+Each unit becomes one vector store file, because OpenAI attributes apply per
+file and section filters need them. An explicit chunking strategy keeps a unit
+in one chunk where it fits. Expect this to take much longer than a whole-file
+upload: about 25 minutes for 5,400 units in our test. The script prints the
+store id as JSON and writes no `active_state.json`.
+
+See [File-level ingest](how-to-guide.md#file-level-ingest) for what this builds.
+
 ## 5. Query
 
 ```python
@@ -111,6 +134,14 @@ print(result.top_score)
 print(result.reason)          # "resolved_context" | "drop_<level>" | ...
 for chunk in result.results:
     print(chunk.score, chunk.snippet[:200])
+```
+
+With units, take the prompt context from `context_for`, which fits the best
+units within a token budget:
+
+```python
+bundle = tar.context_for(result)
+print(bundle.tokens, bundle.unit_ids)
 ```
 
 Async variant — drop-in equivalent, with optional native async client:
@@ -139,7 +170,7 @@ shapes are identical):
 # tar-rag's internal filter dict, generated automatically from your QueryContext:
 {"type": "and", "filters": [
     {"type": "eq", "key": "category", "value": "instruments"},
-    {"type": "eq", "key": "product", "value": "datawell"},
+    {"type": "eq", "key": "product", "value": "acme"},
 ]}
 ```
 
@@ -147,7 +178,7 @@ If you need an OpenAI-side filter that tar-rag can't express (e.g. an
 `in` clause across multiple values), you can either:
 
 - pre-resolve a single value in your `QueryContext` (via
-  `tar.search(..., explicit_levels={"product": "datawell"})`), or
+  `tar.search(..., explicit_levels={"product": "acme"})`), or
 - subclass `OpenAIVectorStoreAdapter` and override `search()` to inject
   your custom filter shape after tar-rag's translation step.
 
@@ -163,3 +194,5 @@ After observing a few real queries, you'll want to revisit:
   answer" than risk an off-topic result).
 - **Alias sidecars** — drop a `_aliases.json` next to documents whose
   filenames don't naturally match how users refer to them.
+- **`context_for(result, max_tokens=...)`** — the context budget, when you
+  upload units.

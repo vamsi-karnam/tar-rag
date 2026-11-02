@@ -1,6 +1,6 @@
 """DOCX text extractor using ``python-docx`` (optional dependency).
 
-Install with ``pip install "tar-rag[docx]"``. Extracts paragraph text plus
+Installed with tar-rag. Extracts paragraph text plus
 table cell text, in document order.
 """
 
@@ -19,7 +19,7 @@ class DocxTextExtractor(TextExtractor):
         except ImportError as exc:
             raise MissingExtractorDependency(
                 "DocxTextExtractor requires the 'python-docx' package. "
-                "Install with: pip install \"tar-rag[docx]\""
+                "Install with: pip install tar-rag"
             ) from exc
 
         document = Document(file_path)

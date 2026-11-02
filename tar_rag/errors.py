@@ -8,10 +8,9 @@ class TarRagError(Exception):
 
 
 class MissingExtractorDependency(TarRagError):
-    """An extractor was required but its optional dependency is not installed.
+    """An extractor was required but its dependency is not installed.
 
-    The message includes the pip install command needed to enable the
-    extractor (e.g. ``pip install "tar-rag[pdf]"``).
+    The message includes the pip install command that restores it.
     """
 
 

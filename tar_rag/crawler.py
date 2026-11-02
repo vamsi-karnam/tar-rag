@@ -31,6 +31,24 @@ from .models import DocumentRecord
 # ---------------------------------------------------------------------------
 
 
+# Metadata keys that tar-rag stamps on every record or unit itself.
+_RESERVED_LEVEL_NAMES = frozenset(
+    {
+        "doc_id",
+        "source_path",
+        "unit_id",
+        "unit_kind",
+        "unit_source",
+        "page_start",
+        "page_end",
+        "section_1",
+        "section_2",
+        "section_3",
+        "section_4",
+    }
+)
+
+
 class HierarchyExtractor(ABC):
     """Convert a file's path into the corresponding level values.
 
@@ -369,6 +387,8 @@ class DirectoryCrawler:
                 raise ValueError(f"level_names must contain non-empty strings, got: {name!r}")
             if name in seen:
                 raise ValueError(f"level_names contains duplicate entry: {name!r}")
+            if name in _RESERVED_LEVEL_NAMES:
+                raise ValueError(f"level_names cannot use the reserved name {name!r}")
             seen.add(name)
 
     @staticmethod

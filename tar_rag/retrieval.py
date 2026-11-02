@@ -38,6 +38,7 @@ class _AttemptOutcome:
     results: list[SearchResult]
     confidence: str
     top_score: float
+    failed: bool = False
 
 
 class RetrievalOrchestrator:
@@ -53,8 +54,10 @@ class RetrievalOrchestrator:
         top_k: int = 6,
         parallel_fallback: bool = True,
         logger: logging.Logger | None = None,
+        min_results: int = 1,
     ) -> None:
         self._adapter = adapter
+        self.min_results = max(1, int(min_results))
         self.scorer = scorer or ConfidenceScorer()
         self.cache = cache
         self.corpus_version = corpus_version
@@ -205,7 +208,7 @@ class RetrievalOrchestrator:
     def _write_cache(self, context: QueryContext, outcome: RetrievalOutcome) -> None:
         if self.cache is None or not self.corpus_version or not outcome.executed:
             return
-        if outcome.error:
+        if outcome.error or outcome.incomplete:
             return
         key = RetrievalCache.build_key(
             context.normalized_query,
@@ -247,7 +250,7 @@ class RetrievalOrchestrator:
                 attempt.reason,
                 exc,
             )
-            return _AttemptOutcome(attempt=attempt, results=[], confidence="none", top_score=0.0)
+            return _AttemptOutcome(attempt, [], "none", 0.0, failed=True)
         return self._summarise(attempt, raw)
 
     async def _arun_one(
@@ -269,7 +272,7 @@ class RetrievalOrchestrator:
                 attempt.reason,
                 exc,
             )
-            return _AttemptOutcome(attempt=attempt, results=[], confidence="none", top_score=0.0)
+            return _AttemptOutcome(attempt, [], "none", 0.0, failed=True)
         return self._summarise(attempt, raw)
 
     def _run_many_sync(
@@ -331,11 +334,10 @@ class RetrievalOrchestrator:
     # Outcome selection
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _should_broaden(attempt: ResolvedAttempt, outcome: _AttemptOutcome) -> bool:
+    def _should_broaden(self, attempt: ResolvedAttempt, outcome: _AttemptOutcome) -> bool:
         if not attempt.allow_broaden:
             return False
-        if not outcome.results:
+        if len(outcome.results) < self.min_results:
             return True
         return outcome.confidence not in {"high", "medium"}
 
@@ -347,6 +349,9 @@ class RetrievalOrchestrator:
         attempts_made: int,
     ) -> RetrievalOutcome:
         chosen: _AttemptOutcome | None = None
+        ran = [outcomes[a.attempt] for a in attempts if a.attempt in outcomes]
+        any_failed = any(item.failed for item in ran)
+        error = "every search attempt failed; see the log" if ran and all(item.failed for item in ran) else None
         for attempt in attempts:
             outcome = outcomes.get(attempt.attempt)
             if outcome is None:
@@ -367,9 +372,13 @@ class RetrievalOrchestrator:
                 top_score=0.0,
                 attempts_made=attempts_made,
                 results=[],
+                error=error,
+                incomplete=any_failed,
             )
         return RetrievalOutcome(
             executed=True,
+            error=error,
+            incomplete=any_failed,
             reason=chosen.attempt.reason,
             confidence=chosen.confidence,
             top_score=chosen.top_score,

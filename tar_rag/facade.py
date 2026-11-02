@@ -15,6 +15,7 @@ Typical use::
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -29,9 +30,26 @@ from .artifacts import (
 from .cache import RetrievalCache
 from .confidence import ConfidenceConfig, ConfidenceScorer
 from .context_resolver import ContextResolver
-from .models import ConversationTurn, QueryContext, RetrievalOutcome
+from .ingest.compile import IDENTIFIER_INDEX_FILENAME
+from .ingest.identifiers import IdentifierIndex
+from .ingest.routing import (
+    DEFAULT_CONTEXT_TOKENS,
+    ContextBundle,
+    LexicalIndex,
+    SectionRoute,
+    SectionRouter,
+    UnitStore,
+    assemble_context,
+    blend_results,
+    section_filter,
+)
+from .models import ConversationTurn, QueryContext, RetrievalOutcome, SearchResult
 from .retrieval import RetrievalOrchestrator
 from .search_plan import SearchPlanBuilder, SearchPlanTemplate
+
+_TOP_K_FILES = 6
+_TOP_K_WITH_UNITS = 12
+_MIN_RESULTS_WITH_UNITS = 3
 
 
 class TarRag:
@@ -48,7 +66,14 @@ class TarRag:
         top_k: int = 6,
         parallel_fallback: bool = True,
         logger: logging.Logger | None = None,
+        section_router: SectionRouter | None = None,
+        identifiers: IdentifierIndex | None = None,
+        units: UnitStore | None = None,
     ) -> None:
+        self.section_router = section_router
+        self.identifiers = identifiers
+        self.units = units
+        self._lexical: LexicalIndex | None = None
         self.corpus_map = corpus_map
         self.level_names = list(corpus_map.get("level_names") or [])
         self.corpus_version = str(corpus_map.get("version") or "")
@@ -64,6 +89,9 @@ class TarRag:
             top_k=top_k,
             parallel_fallback=parallel_fallback,
             logger=logger,
+            # A deep filter that finds almost nothing was probably a wrong guess at the
+            # topic, and small units need more than one hit. File-level corpora keep 1.
+            min_results=_MIN_RESULTS_WITH_UNITS if units is not None else 1,
         )
 
     # ------------------------------------------------------------------
@@ -77,7 +105,7 @@ class TarRag:
         *,
         adapter: AbstractVectorStoreAdapter | None = None,
         cache_root: Path | str | None = None,
-        top_k: int = 6,
+        top_k: int | None = None,
         parallel_fallback: bool = True,
         logger: logging.Logger | None = None,
     ) -> TarRag:
@@ -104,6 +132,18 @@ class TarRag:
 
         cache = RetrievalCache(cache_root=cache_root) if cache_root is not None else None
 
+        # Written by ``tar-rag crawl --ingest``. Without them, routing stays at folder level.
+        # Units are smaller than file chunks, so more of them are fetched.
+        units = UnitStore.load(base)
+        if top_k is None:
+            top_k = _TOP_K_WITH_UNITS if units is not None else _TOP_K_FILES
+        identifier_path = base / IDENTIFIER_INDEX_FILENAME
+        identifiers = (
+            IdentifierIndex.from_dict(json.loads(identifier_path.read_text(encoding="utf-8")))
+            if identifier_path.exists()
+            else None
+        )
+
         return cls(
             corpus_map=corpus_map,
             search_plan=search_plan,
@@ -113,6 +153,9 @@ class TarRag:
             top_k=top_k,
             parallel_fallback=parallel_fallback,
             logger=logger,
+            section_router=SectionRouter.load(base),
+            identifiers=identifiers,
+            units=units,
         )
 
     # ------------------------------------------------------------------
@@ -139,9 +182,17 @@ class TarRag:
     ) -> RetrievalOutcome:
         context, attempts = self._prepare(query, conversation, explicit_levels)
         outcome = self.orchestrator.execute(context, attempts)
-        if attach_clarification:
-            self._attach_clarification(context, outcome)
-        return outcome
+        routed: list[SearchResult] = []
+        route = self._route(context)
+        if route is not None:
+            try:
+                routed = self.orchestrator.adapter.search(
+                    context.effective_query, section_filter(route), self.orchestrator.top_k
+                )
+            except Exception as exc:
+                # The routed search only adds evidence, so its failure must not end a good search.
+                self.orchestrator.logger.warning("Routed search failed: %s", exc)
+        return self._finish(query, context, outcome, routed, attach_clarification, explicit_levels)
 
     async def asearch(
         self,
@@ -153,9 +204,16 @@ class TarRag:
     ) -> RetrievalOutcome:
         context, attempts = self._prepare(query, conversation, explicit_levels)
         outcome = await self.orchestrator.aexecute(context, attempts)
-        if attach_clarification:
-            self._attach_clarification(context, outcome)
-        return outcome
+        routed: list[SearchResult] = []
+        route = self._route(context)
+        if route is not None:
+            try:
+                routed = await self.orchestrator.adapter.asearch(
+                    context.effective_query, section_filter(route), self.orchestrator.top_k
+                )
+            except Exception as exc:
+                self.orchestrator.logger.warning("Routed search failed: %s", exc)
+        return self._finish(query, context, outcome, routed, attach_clarification, explicit_levels)
 
     # ------------------------------------------------------------------
     # Internals
@@ -175,6 +233,87 @@ class TarRag:
         )
         attempts = self.search_plan_builder.resolve(context, template=self.search_plan)
         return context, attempts
+
+    def _route(self, context: QueryContext) -> SectionRoute | None:
+        if self.section_router is None:
+            return None
+        return self.section_router.route(context.effective_query, context.resolved)
+
+    def _in_scope(self, unit_id: str, explicit_levels: dict[str, str | None] | None) -> bool:
+        """Honour pinned levels: exact lookup must not read outside the caller's scope."""
+        assert self.units is not None
+        metadata = self.units.rows[unit_id].get("metadata") or {}
+        for name, value in (explicit_levels or {}).items():
+            if value and metadata.get(name) != value:
+                return False
+        return True
+
+    def _unit_results(
+        self, unit_ids: list[str], explicit_levels: dict[str, str | None] | None
+    ) -> list[SearchResult]:
+        if self.units is None:
+            return []
+        results = [
+            self.units.result(unit_id)
+            for unit_id in unit_ids
+            if unit_id in self.units.rows and self._in_scope(unit_id, explicit_levels)
+        ]
+        return [result for result in results if result is not None]
+
+    def _named_results(
+        self, query: str, explicit_levels: dict[str, str | None] | None = None
+    ) -> list[SearchResult]:
+        if self.identifiers is None:
+            return []
+        return self._unit_results(self.identifiers.lookup(query), explicit_levels)
+
+    def _lexical_results(
+        self, query: str, explicit_levels: dict[str, str | None] | None = None
+    ) -> list[SearchResult]:
+        if self.units is None or not self.units.rows:
+            return []
+        if self._lexical is None:
+            self._lexical = LexicalIndex(self.units)
+        found = self._unit_results(self._lexical.search(query), explicit_levels)
+        for result in found:
+            result.score = 0.0  # not comparable with a vector score, so it must not lift confidence
+        return found
+
+    def _finish(
+        self,
+        query: str,
+        context: QueryContext,
+        outcome: RetrievalOutcome,
+        routed: list[SearchResult],
+        attach_clarification: bool,
+        explicit_levels: dict[str, str | None] | None = None,
+    ) -> RetrievalOutcome:
+        """Add exact, routed and lexical evidence to the normal outcome. Nothing is taken away."""
+        named = self._named_results(query, explicit_levels)
+        if routed:
+            outcome.results = blend_results(routed, outcome.results)
+            ordered = sorted(outcome.results, key=lambda result: result.score, reverse=True)
+            outcome.confidence = self.orchestrator.scorer.score(ordered)
+            outcome.top_score = ordered[0].score
+            outcome.reason = "section_route"
+        lexical = self._lexical_results(query, explicit_levels)
+        if lexical:
+            outcome.results = blend_results(outcome.results, lexical)
+        if named:
+            outcome.results = blend_results(named, [], outcome.results)
+            outcome.reason = "identifier_match"
+            outcome.confidence = "high"
+            outcome.top_score = 1.0
+            outcome.executed = True
+        elif attach_clarification:
+            self._attach_clarification(context, outcome)
+        return outcome
+
+    def context_for(
+        self, outcome: RetrievalOutcome, *, max_tokens: int = DEFAULT_CONTEXT_TOKENS
+    ) -> ContextBundle:
+        """Return the best results that fit ``max_tokens``, ready for an LLM."""
+        return assemble_context(outcome, max_tokens=max_tokens, units=self.units)
 
     def _attach_clarification(self, context: QueryContext, outcome: RetrievalOutcome) -> None:
         clarification = self.resolver.build_clarification(

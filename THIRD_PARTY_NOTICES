@@ -1,0 +1,54 @@
+tar-rag third-party notices
+===========================
+
+tar-rag is licensed under the Apache License 2.0. See LICENSE.
+
+Redistributed with tar-rag
+--------------------------
+
+tessdata_fast, English model (tar_rag/data/tessdata/eng.traineddata)
+  Part of the Tesseract OCR project.
+  Source: https://github.com/tesseract-ocr/tessdata_fast
+  Licence: Apache License 2.0. A copy of the licence is in LICENSE.
+  The file is unmodified. Its git blob hash matches upstream:
+  bbef4675053b5b468cdb477053e28b1c698ba08e
+
+Required at runtime, not redistributed with tar-rag
+---------------------------------------------------
+
+These install as their own packages and carry their own licence files.
+
+Tesseract OCR engine
+  Source: https://github.com/tesseract-ocr/tesseract
+  Licence: Apache License 2.0.
+  Tesseract uses Leptonica, which uses a BSD 2-clause style licence.
+
+tesserocr
+  Source: https://github.com/sirfz/tesserocr
+  Licence: MIT.
+  Its wheels bundle Tesseract, Leptonica and their runtime libraries, with the
+  licence file of each one under the wheel's licence folder.
+
+pypdf
+  Source: https://github.com/py-pdf/pypdf
+  Licence: BSD 3-Clause.
+
+pdfplumber, and pdfminer.six which it uses
+  Source: https://github.com/jsvine/pdfplumber
+  Licence: MIT.
+
+pypdfium2
+  Source: https://github.com/pypdfium2-team/pypdfium2
+  Licence: Apache License 2.0 or BSD 3-Clause. Its wheels bundle PDFium, with
+  the licence files of PDFium and its dependencies inside the wheel.
+
+Pillow
+  Source: https://github.com/python-pillow/Pillow
+  Licence: MIT-CMU.
+
+python-docx, and lxml which it uses
+  Source: https://github.com/python-openxml/python-docx
+  Licences: MIT, and BSD 3-Clause for lxml.
+
+Optional extras (openai, pinecone, qdrant-client, chromadb) are not installed by
+default and carry their own licences.

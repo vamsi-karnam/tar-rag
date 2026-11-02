@@ -39,21 +39,21 @@ def test_crawler_handles_variable_depth(tmp_path: Path) -> None:
     _make_corpus(
         tmp_path,
         {
-            "instruments/datawell/operator_manual/dwr.txt": "dwr",
-            "instruments/triaxys/user_guide.md": "triaxys",
+            "instruments/acme/operator_manual/model_x.txt": "model_x",
+            "instruments/globex/user_guide.md": "globex",
             "general/overview.txt": "overview",
         },
     )
     docs = DirectoryCrawler(tmp_path, ["category", "product", "sub_type"]).crawl()
     by_path = {d.relative_path: d for d in docs}
-    assert by_path["instruments/datawell/operator_manual/dwr.txt"].levels == {
+    assert by_path["instruments/acme/operator_manual/model_x.txt"].levels == {
         "category": "instruments",
-        "product": "datawell",
+        "product": "acme",
         "sub_type": "operator_manual",
     }
-    assert by_path["instruments/triaxys/user_guide.md"].levels == {
+    assert by_path["instruments/globex/user_guide.md"].levels == {
         "category": "instruments",
-        "product": "triaxys",
+        "product": "globex",
         "sub_type": None,
     }
     assert by_path["general/overview.txt"].levels == {
@@ -98,18 +98,18 @@ def test_crawler_alias_sidecar_extends_aliases(tmp_path: Path) -> None:
     _make_corpus(
         tmp_path,
         {
-            "instruments/datawell/dwr_mkiii.txt": "manual",
+            "instruments/acme/model_x.txt": "manual",
         },
     )
-    sidecar = tmp_path / "instruments" / "datawell" / "_aliases.json"
+    sidecar = tmp_path / "instruments" / "acme" / "_aliases.json"
     sidecar.write_text(
-        json.dumps({"dwr_mkiii.txt": ["dwr", "MkIII", "DWR-MkIII"]}),
+        json.dumps({"model_x.txt": ["model_x", "MkIII", "DWR-MkIII"]}),
         encoding="utf-8",
     )
     docs = DirectoryCrawler(tmp_path, ["category", "product"]).crawl()
     assert len(docs) == 1
     doc = docs[0]
-    assert "dwr" in doc.aliases
+    assert "model_x" in doc.aliases
     assert "mkiii" in doc.aliases
     assert "dwr-mkiii" in doc.aliases
 
@@ -155,13 +155,13 @@ class FilenamePatternExtractor(HierarchyExtractor):
 
 
 def test_custom_hierarchy_extractor_overrides_directory_extraction(tmp_path: Path) -> None:
-    _make_corpus(tmp_path, {"any/INSTRUMENTS_DATAWELL.txt": "x"})
+    _make_corpus(tmp_path, {"any/INSTRUMENTS_ACME.txt": "x"})
     docs = DirectoryCrawler(
         tmp_path,
         ["domain", "product"],
         hierarchy_extractor=FilenamePatternExtractor(),
     ).crawl()
-    assert docs[0].levels == {"domain": "INSTRUMENTS", "product": "DATAWELL"}
+    assert docs[0].levels == {"domain": "INSTRUMENTS", "product": "ACME"}
 
 
 def test_directory_hierarchy_extractor_default() -> None:

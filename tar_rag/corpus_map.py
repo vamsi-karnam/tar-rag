@@ -8,7 +8,7 @@ Tree shape (Section 8.1 of the implementation plan)::
 
     {
         "instruments": {                       # value at level 0 (e.g. "category")
-            "datawell": {                      # value at level 1 (e.g. "product")
+            "acme": {                      # value at level 1 (e.g. "product")
                 "_documents": [...],           # docs that sit at this depth
                 "_sub_type": {                 # "_" + next_level_name
                     "operator_manual": {       # value at level 2 (e.g. "sub_type")

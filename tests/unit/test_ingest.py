@@ -1,0 +1,568 @@
+"""Tests for text formats, the ingest stage and query-time routing. All data is synthetic."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from tar_rag import DirectoryCrawler, TarRag, build_artifacts
+from tar_rag.adapters.base import AbstractVectorStoreAdapter
+from tar_rag.cli import main as cli_main
+from tar_rag.errors import TarRagError
+from tar_rag.ingest import (
+    IdentifierIndex,
+    SectionRouter,
+    build_document_tree,
+    build_units,
+    extract_identifiers,
+    ingest_documents,
+    load_document,
+    normalize_identifier,
+)
+from tar_rag.ingest.routing import (
+    LexicalIndex,
+    SectionRoute,
+    UnitStore,
+    assemble_context,
+    blend_results,
+    section_filter,
+)
+from tar_rag.ingest.textdocs import parse_html, parse_markdown
+from tar_rag.models import RetrievalOutcome, SearchResult
+
+MARKDOWN = """Preface text before any heading.
+
+# Guide
+
+Intro paragraph.
+
+## Install
+
+Run the installer.
+
+```
+# not a heading
+```
+
+| Name | Value |
+|------|-------|
+| A    | 1     |
+| B    | 2     |
+
+## Usage
+
+Use it often.
+"""
+
+HTML = """<html><head><title>x</title><style>h1 {}</style></head><body>
+<h1>Guide</h1><p>Intro paragraph.</p>
+<h2>Install</h2><p>Run the installer.</p>
+<table><tr><th>Name</th><th>Value</th></tr><tr><td>A</td><td>1</td></tr></table>
+<script>var hidden = 1;</script>
+<h2>Usage</h2><ul><li>Use it often.</li></ul>
+</body></html>"""
+
+
+def test_markdown_headings_and_tables() -> None:
+    document = parse_markdown(MARKDOWN)
+    assert [(entry.title, entry.level) for entry in document.outline] == [
+        ("Guide", 0),
+        ("Install", 1),
+        ("Usage", 1),
+    ]
+    assert document.tables[0].header == ["Name", "Value"]
+    assert document.tables[0].rows == [["A", "1"], ["B", "2"]]
+
+
+def test_markdown_heading_inside_a_fence_is_ignored() -> None:
+    assert "not a heading" not in [entry.title for entry in parse_markdown(MARKDOWN).outline]
+
+
+def test_text_before_the_first_heading_is_kept() -> None:
+    document = parse_markdown(MARKDOWN)
+    units = build_units(document, build_document_tree(document))
+    assert "Preface text" in units[0].body
+    assert units[0].section_keys == ["0"]
+
+
+def test_markdown_units_carry_no_page_numbers() -> None:
+    document = parse_markdown(MARKDOWN)
+    units = build_units(document, build_document_tree(document), title="guide.md")
+    install = next(unit for unit in units if unit.title == "Install")
+    assert install.text.startswith("guide.md > Guide > Install\n")
+    assert install.section_keys == ["1", "1.1"]
+    assert "| A | 1 |" in install.body
+
+
+def test_html_headings_tables_and_skipped_tags() -> None:
+    document = parse_html(HTML)
+    assert [entry.title for entry in document.outline] == ["Guide", "Install", "Usage"]
+    assert document.tables[0].rows == [["A", "1"]]
+    units = build_units(document, build_document_tree(document))
+    text = "\n".join(unit.body for unit in units)
+    assert "hidden" not in text
+    assert "Use it often." in text
+
+
+def test_docx_headings_and_tables(tmp_path: Path) -> None:
+    docx = pytest.importorskip("docx")
+    source = docx.Document()
+    source.add_heading("Guide", level=1)
+    source.add_paragraph("Intro paragraph.")
+    source.add_heading("Install", level=2)
+    table = source.add_table(rows=2, cols=2)
+    table.cell(0, 0).text, table.cell(0, 1).text = "Name", "Value"
+    table.cell(1, 0).text, table.cell(1, 1).text = "A", "1"
+    path = tmp_path / "guide.docx"
+    source.save(str(path))
+    document = load_document(str(path))
+    assert [(entry.title, entry.level) for entry in document.outline] == [("Guide", 0), ("Install", 1)]
+    assert document.tables[0].rows == [["A", "1"]]
+
+
+def test_plain_file_becomes_a_whole_file_tree(tmp_path: Path) -> None:
+    path = tmp_path / "code.py"
+    path.write_text("x = 1\ny = 2\n", encoding="utf-8")
+    document = load_document(str(path))
+    tree = build_document_tree(document)
+    assert tree.source == "file"
+    assert "x = 1" in build_units(document, tree)[0].body
+
+
+def test_identifiers_found_and_folded() -> None:
+    assert extract_identifiers("Set IRQ_ENABLE and part 6ES7-131 on the board") == {"IRQ_ENABLE", "6ES7-131"}
+    assert normalize_identifier("IRQ_ENABLE") == normalize_identifier("1RQ_ENABLE")
+    assert normalize_identifier("OxLOCK") == normalize_identifier("0X1OCK")
+
+
+def test_plain_words_are_not_identifiers() -> None:
+    assert extract_identifiers("the well-known read-only value") == set()
+
+
+def test_identifier_index_ranks_titles_first_and_finds_misreads() -> None:
+    index = IdentifierIndex.build(
+        [
+            ("a", "Overview", "Mentions 1RQ_ENABLE in passing"),
+            ("b", "IRQ_ENABLE Register", "Full IRQ_ENABLE description"),
+        ]
+    )
+    assert index.lookup("What does IRQ_ENABLE do?") == ["b", "a"]
+    assert index.lookup("nothing here") == []
+
+
+def _maps() -> list[dict[str, Any]]:
+    sections = [
+        {"key": "1", "title": "Timers and Counters", "children": [
+            {"key": "1.1", "title": "Watchdog Timer", "children": []},
+            {"key": "1.2", "title": "General Timer", "children": []},
+        ]},
+        {"key": "2", "title": "Serial Ports", "children": [
+            {"key": "2.1", "title": "UART Interface", "children": []},
+        ]},
+    ]
+    return [
+        {"doc_id": "d1", "levels": {"product": "alpha"}, "sections": sections},
+        {"doc_id": "d2", "levels": {"product": "beta"}, "sections": [
+            {"key": "1", "title": "Power Supply", "children": []}]},
+    ]
+
+
+def test_rare_term_routes_to_its_section() -> None:
+    route = SectionRouter(_maps()).route("how does the watchdog reset", {})
+    assert route is not None
+    assert (route.doc_id, route.keys) == ("d1", ["1", "1.1"])
+
+
+def test_rare_term_outweighs_a_common_one() -> None:
+    sections = [
+        {"key": "1", "title": "Alpha Map", "children": []},
+        {"key": "2", "title": "Beta Map", "children": []},
+        {"key": "3", "title": "Gamma Map", "children": []},
+        {"key": "4", "title": "Watchdog Control", "children": []},
+    ]
+    route = SectionRouter([{"doc_id": "d", "sections": sections}]).route("watchdog map", {})
+    assert route is not None
+    assert route.keys == ["4"]
+
+
+def test_title_covering_too_little_of_the_query_gives_no_route() -> None:
+    sections = [
+        {"key": "1", "title": "Power Supply", "children": []},
+        {"key": "2", "title": "Battery Charger", "children": []},
+        {"key": "3", "title": "Serial Port", "children": []},
+    ]
+    assert SectionRouter([{"doc_id": "d", "sections": sections}]).route("power battery serial", {}) is None
+
+
+def test_no_title_term_gives_no_route() -> None:
+    assert SectionRouter(_maps()).route("completely unrelated words", {}) is None
+
+
+def test_resolved_levels_scope_the_route() -> None:
+    router = SectionRouter(_maps())
+    assert router.route("power supply", {"product": "alpha"}) is None
+    route = router.route("power supply", {"product": "beta"})
+    assert route is not None and route.doc_id == "d2"
+
+
+def test_equal_scores_across_documents_do_not_route() -> None:
+    maps = [
+        {"doc_id": "a", "sections": [{"key": "1", "title": "Battery Replacement", "children": []}]},
+        {"doc_id": "b", "sections": [{"key": "1", "title": "Battery Replacement", "children": []}]},
+        {"doc_id": "c", "sections": [{"key": "1", "title": "Something Else", "children": []}]},
+    ]
+    assert SectionRouter(maps).route("battery replacement", {}) is None
+
+
+def test_section_filter_uses_the_deepest_key() -> None:
+    filters = section_filter(SectionRoute("d1", ["1", "1.1", "1.1.2"], 1.0))
+    assert filters["filters"] == [
+        {"type": "eq", "key": "doc_id", "value": "d1"},
+        {"type": "eq", "key": "section_3", "value": "1.1.2"},
+    ]
+
+
+def test_blend_takes_turns_and_drops_duplicates() -> None:
+    first = [_result("a", "a"), _result("b", "b")]
+    second = [_result("a", "a"), _result("c", "c"), _result("d", "d")]
+    assert [r.snippet for r in blend_results(first, second)] == ["a", "b", "c", "d"]
+
+
+def test_lookup_ranks_units_holding_every_name_first() -> None:
+    index = IdentifierIndex.build(
+        [
+            ("register_1", "CTRL_REG Register", "plain words"),
+            ("register_2", "CTRL_REG Map", "plain words"),
+            ("field_only", "EN_FLAG Note", "plain words"),
+            ("both", "Other", "EN_FLAG inside CTRL_REG"),
+        ]
+    )
+    assert index.lookup("What is EN_FLAG in CTRL_REG?")[0] == "both"
+
+
+def test_title_names_are_indexed() -> None:
+    index = IdentifierIndex.build([("a", "CTRL_REG Register", "plain words only")])
+    assert index.lookup("CTRL_REG") == ["a"]
+
+
+def _outcome(results: list[SearchResult], confidence: str = "high") -> RetrievalOutcome:
+    return RetrievalOutcome(True, "x", confidence, 0.9, 1, results)
+
+
+def _result(text: str, unit_id: str = "", source: str = "text") -> SearchResult:
+    return SearchResult(0.9, text, {"unit_id": unit_id, "unit_source": source})
+
+
+def test_context_stays_within_the_budget() -> None:
+    results = [_result("alpha " * 100, "a"), _result("bravo " * 100, "b"), _result("short", "c")]
+    bundle = assemble_context(_outcome(results), max_tokens=300)
+    assert bundle.unit_ids == ["a", "c"]
+    assert bundle.skipped == 1
+    assert bundle.tokens <= 300
+
+
+def test_no_results_give_no_context() -> None:
+    assert assemble_context(_outcome([], "none")).text == ""
+
+
+def test_low_confidence_gives_a_small_context() -> None:
+    results = [_result(f"text {index}", str(index)) for index in range(6)]
+    bundle = assemble_context(_outcome(results, "low"))
+    assert bundle.unit_ids == ["0", "1", "2"]
+
+
+def test_outcome_that_did_not_run_gives_no_context() -> None:
+    outcome = RetrievalOutcome(False, "x", "low", 0.0, 0, [_result("text", "a")])
+    assert assemble_context(outcome).text == ""
+
+
+def test_context_removes_duplicates_and_flags_ocr() -> None:
+    bundle = assemble_context(_outcome([_result("same", "a", "ocr"), _result("same", "a", "ocr")]))
+    assert bundle.unit_ids == ["a"]
+    assert bundle.has_ocr
+
+
+def _store(tmp_path: Path, sections: list[str], texts: list[str] | None = None) -> UnitStore:
+    rows = []
+    for index, section in enumerate(sections):
+        path = f"{index}.md"
+        (tmp_path / path).write_text((texts or [f"part {index}"] * len(sections))[index], encoding="utf-8")
+        rows.append({"unit_id": f"u{index}", "path": path, "metadata": {"doc_id": "d", "section_1": section}})
+    return UnitStore(tmp_path, rows)
+
+
+def test_neighbours_fill_the_context_in_reading_order(tmp_path: Path) -> None:
+    store = _store(tmp_path, ["1", "1", "1"], ["first part", "second part", "third part"])
+    outcome = _outcome([SearchResult(0.9, "second part", {"unit_id": "u1"})])
+    bundle = assemble_context(outcome, units=store)
+    assert bundle.text.index("first part") < bundle.text.index("second part") < bundle.text.index("third part")
+    assert set(bundle.unit_ids) == {"u0", "u1", "u2"}
+
+
+def test_neighbour_in_another_chapter_of_a_long_document_is_left_out(tmp_path: Path) -> None:
+    store = _store(tmp_path, ["1", "2", "2", "2", "2", "2", "2", "2"])
+    bundle = assemble_context(_outcome([SearchResult(0.9, "part 0", {"unit_id": "u0"})]), units=store)
+    assert bundle.unit_ids == ["u0"]
+
+
+def test_short_document_ignores_chapters(tmp_path: Path) -> None:
+    store = _store(tmp_path, ["1", "2"])
+    bundle = assemble_context(_outcome([SearchResult(0.9, "part 0", {"unit_id": "u0"})]), units=store)
+    assert set(bundle.unit_ids) == {"u0", "u1"}
+
+
+def test_size_split_section_stays_together_ahead_of_other_hits(tmp_path: Path) -> None:
+    store = _store(tmp_path, ["1", "1", "9"], ["a" * 500, "b" * 500, "c" * 500])
+    store.rows["u0"]["title"] = store.rows["u1"]["title"] = "Same"
+    store.rows["u2"]["title"] = "Other"
+    results = [SearchResult(0.9, "x", {"unit_id": "u0"}), SearchResult(0.8, "x", {"unit_id": "u2"})]
+    bundle = assemble_context(_outcome(results), max_tokens=400, units=store)
+    assert bundle.unit_ids == ["u0", "u1"]
+
+
+def test_context_names_each_document_once(tmp_path: Path) -> None:
+    store = _store(tmp_path, ["1", "1"], ["head\n\nfirst", "head\n\nsecond"])
+    for row in store.rows.values():
+        row["metadata"]["source_path"] = "guide.pdf"
+        row["metadata"]["page_start"] = 4
+        row["title"] = "Setup"
+    bundle = assemble_context(_outcome([SearchResult(0.9, "x", {"unit_id": "u0"})]), units=store)
+    assert bundle.text.count("Document: guide.pdf") == 1
+    assert "[page 4] Setup" in bundle.text
+
+
+def test_lexical_search_finds_a_rare_word(tmp_path: Path) -> None:
+    store = _store(tmp_path, ["1", "2", "3", "4", "5", "6", "7", "8"], [f"common words {i}" for i in range(7)] + ["common hydrophone"])
+    assert LexicalIndex(store).search("hydrophone words")[0] == "u7"
+
+
+def test_unit_path_outside_the_output_folder_is_refused(tmp_path: Path) -> None:
+    secret = tmp_path / "secret.txt"
+    secret.write_text("secret", encoding="utf-8")
+    folder = tmp_path / "out"
+    folder.mkdir()
+    store = UnitStore(folder, [{"unit_id": "x", "path": "../secret.txt", "metadata": {}}])
+    assert store.text("x") is None
+
+
+def test_neighbours_stay_within_the_budget(tmp_path: Path) -> None:
+    store = _store(tmp_path, ["1", "1"], ["short", "word " * 500])
+    bundle = assemble_context(_outcome([SearchResult(0.9, "short", {"unit_id": "u0"})]), max_tokens=100, units=store)
+    assert bundle.unit_ids == ["u0"]
+    assert bundle.tokens <= 100
+
+
+def test_neighbour_is_not_added_twice(tmp_path: Path) -> None:
+    store = _store(tmp_path, ["1", "1"], ["part 0", "part 1"])
+    results = [SearchResult(0.9, "part 0", {"unit_id": "u0"}), SearchResult(0.8, "part 1", {"unit_id": "u1"})]
+    assert assemble_context(_outcome(results), units=store).text.count("part 1") == 1
+
+
+def test_duplicate_document_text_is_dropped(tmp_path: Path) -> None:
+    store = _store(tmp_path, ["1", "2"], ["copy-a.pdf (page 1)\n\nsame words", "copy-b.pdf (page 4)\n\nsame words"])
+    results = [SearchResult(0.9, "x", {"unit_id": "u0"}), SearchResult(0.8, "x", {"unit_id": "u1"})]
+    assert assemble_context(_outcome(results), units=store).unit_ids == ["u0"]
+
+
+def test_more_results_are_fetched_with_units(corpus: tuple[Path, Path], tmp_path: Path) -> None:
+    _, output = corpus
+    assert TarRag.from_artifacts(output, adapter=RecordingAdapter()).orchestrator.top_k == 12
+    assert TarRag.from_artifacts(output, adapter=RecordingAdapter(), top_k=3).orchestrator.top_k == 3
+
+
+def test_ocr_neighbour_sets_the_flag(tmp_path: Path) -> None:
+    store = _store(tmp_path, ["1", "1"])
+    store.rows["u1"]["metadata"]["unit_source"] = "ocr"
+    assert assemble_context(_outcome([SearchResult(0.9, "part 0", {"unit_id": "u0"})]), units=store).has_ocr
+
+
+class RecordingAdapter(AbstractVectorStoreAdapter):
+    def __init__(self, score: float = 0.9) -> None:
+        self.calls: list[Any] = []
+        self.score = score
+
+    def search(self, query: str, filters: dict[str, Any] | None, top_k: int) -> list[SearchResult]:
+        self.calls.append(filters)
+        return [SearchResult(self.score, "stored text", {"unit_id": ""})]
+
+
+@pytest.fixture
+def corpus(tmp_path: Path) -> tuple[Path, Path]:
+    root = tmp_path / "corpus" / "manuals" / "alpha"
+    root.mkdir(parents=True)
+    (root / "guide.md").write_text(
+        "# Device Guide\n\nIntro.\n\n## Watchdog Timer\n\nThe WDT_LOAD_VALUE register sets the timeout.\n\n## Serial Port\n\nBaud rates.\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "out"
+    assert cli_main(
+        ["crawl", str(tmp_path / "corpus"), "--levels", "category,product", "--output", str(output), "--ingest", "--quiet"]
+    ) == 0
+    return tmp_path / "corpus", output
+
+
+def test_ingest_writes_all_artifacts(corpus: tuple[Path, Path]) -> None:
+    _, output = corpus
+    manifest = json.loads((output / "unit_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["failed"] == {}
+    row = next(item for item in manifest["units"] if item["title"] == "Watchdog Timer")
+    assert row["metadata"]["category"] == "manuals"
+    assert None not in row["metadata"].values()
+    assert row["metadata"]["section_2"] == "1.1"
+    assert (output / row["path"]).read_text(encoding="utf-8").startswith("guide.md > Device Guide > Watchdog Timer")
+    assert len(list((output / "document_maps").glob("*.json"))) == 1
+    index = json.loads((output / "identifier_index.json").read_text(encoding="utf-8"))["identifiers"]
+    assert normalize_identifier("WDT_LOAD_VALUE") in index
+
+
+def test_exact_match_leads_and_vector_results_follow(corpus: tuple[Path, Path]) -> None:
+    _, output = corpus
+    adapter = RecordingAdapter()
+    tar = TarRag.from_artifacts(output, adapter=adapter)
+    outcome = tar.search("what does WDT_LOAD_VALUE do")
+    assert outcome.reason == "identifier_match"
+    assert "sets the timeout" in outcome.results[0].snippet
+    assert any(result.snippet == "stored text" for result in outcome.results)
+    assert adapter.calls
+    bundle = tar.context_for(outcome)
+    assert "sets the timeout" in bundle.text
+    assert bundle.unit_ids
+
+
+def test_routed_search_adds_to_the_normal_search(corpus: tuple[Path, Path]) -> None:
+    _, output = corpus
+    adapter = RecordingAdapter()
+    tar = TarRag.from_artifacts(output, adapter=adapter)
+    outcome = tar.search("how does the watchdog work")
+    assert outcome.reason == "section_route"
+    routed = [call for call in adapter.calls if call and "filters" in call]
+    assert {"type": "eq", "key": "section_2", "value": "1.1"} in routed[0]["filters"]
+    assert len(adapter.calls) >= 2
+
+
+def test_wrong_route_cannot_remove_a_normal_result(corpus: tuple[Path, Path]) -> None:
+    class Split(RecordingAdapter):
+        def search(self, query: str, filters: dict[str, Any] | None, top_k: int) -> list[SearchResult]:
+            self.calls.append(filters)
+            text = "routed" if filters and "section_2" in str(filters) else "normal"
+            return [SearchResult(0.9, text, {})]
+
+    _, output = corpus
+    tar = TarRag.from_artifacts(output, adapter=Split())
+    snippets = [result.snippet for result in tar.search("how does the watchdog work").results]
+    assert "normal" in snippets and "routed" in snippets
+
+
+def test_weak_results_are_not_lifted_by_other_evidence(corpus: tuple[Path, Path]) -> None:
+    _, output = corpus
+    tar = TarRag.from_artifacts(output, adapter=RecordingAdapter(score=0.1))
+    outcome = tar.search("how does the watchdog work")
+    assert outcome.confidence == "low"
+    assert outcome.should_answer is False
+
+
+def test_failed_routed_search_does_not_end_a_good_search(corpus: tuple[Path, Path]) -> None:
+    class FailsOnSection(RecordingAdapter):
+        def search(self, query: str, filters: dict[str, Any] | None, top_k: int) -> list[SearchResult]:
+            if filters and "section_" in str(filters):
+                raise RuntimeError("store fell over")
+            return super().search(query, filters, top_k)
+
+    _, output = corpus
+    outcome = TarRag.from_artifacts(output, adapter=FailsOnSection()).search("how does the watchdog work")
+    assert outcome.results
+
+
+def test_exact_lookup_respects_pinned_levels(tmp_path: Path) -> None:
+    for tenant in ("tenant_a", "tenant_b"):
+        folder = tmp_path / "corpus" / tenant
+        folder.mkdir(parents=True)
+        (folder / f"{tenant}.md").write_text(f"# Notes\n\nSHARED_NAME for {tenant}.\n", encoding="utf-8")
+    output = tmp_path / "out"
+    assert cli_main(["crawl", str(tmp_path / "corpus"), "--levels", "tenant", "--output", str(output), "--ingest", "--quiet"]) == 0
+    tar = TarRag.from_artifacts(output, adapter=RecordingAdapter())
+    outcome = tar.search("what is SHARED_NAME", explicit_levels={"tenant": "tenant_a"})
+    assert all("tenant_b" not in result.snippet for result in outcome.results)
+
+
+def test_failing_adapter_reports_an_error_and_is_not_cached(tmp_path: Path, corpus: tuple[Path, Path]) -> None:
+    class Down(RecordingAdapter):
+        def search(self, query: str, filters: dict[str, Any] | None, top_k: int) -> list[SearchResult]:
+            raise RuntimeError("401 invalid api key")
+
+    _, output = corpus
+    tar = TarRag.from_artifacts(output, adapter=Down(), cache_root=tmp_path / "cache")
+    first = tar.search("something unrelated entirely")
+    assert first.error
+    tar.set_adapter(RecordingAdapter())
+    assert tar.search("something unrelated entirely").cache_hit is False
+
+
+def test_ingest_refuses_a_folder_holding_user_files(tmp_path: Path) -> None:
+    output = tmp_path / "out"
+    (output / "units").mkdir(parents=True)
+    (output / "units" / "mine.txt").write_text("keep me", encoding="utf-8")
+    with pytest.raises(TarRagError):
+        ingest_documents([], output, level_names=[], corpus_version="v1")
+    assert (output / "units" / "mine.txt").read_text(encoding="utf-8") == "keep me"
+
+
+def test_ingest_replaces_its_own_output(tmp_path: Path) -> None:
+    output = tmp_path / "out"
+    ingest_documents([], output, level_names=[], corpus_version="v1")
+    ingest_documents([], output, level_names=[], corpus_version="v2")
+    assert (output / "unit_manifest.json").exists()
+
+
+def test_cli_refuses_output_inside_the_corpus(tmp_path: Path) -> None:
+    (tmp_path / "doc.md").write_text("# A\n", encoding="utf-8")
+    assert cli_main(["crawl", str(tmp_path), "--output", str(tmp_path / "out"), "--ingest", "--quiet"]) == 2
+
+
+def test_reserved_level_name_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="reserved"):
+        DirectoryCrawler(tmp_path, level_names=["doc_id"])
+
+
+def test_long_heading_line_does_not_stall_the_parser() -> None:
+    assert parse_markdown("#" + " " * 50000 + "x\n").outline == []
+
+
+@pytest.mark.asyncio
+async def test_async_search_matches_sync(corpus: tuple[Path, Path]) -> None:
+    _, output = corpus
+    tar = TarRag.from_artifacts(output, adapter=RecordingAdapter())
+    outcome = await tar.asearch("how does the watchdog work")
+    assert outcome.reason == "section_route"
+
+
+def test_corpus_without_ingest_stays_at_folder_level(tmp_path: Path) -> None:
+    root = tmp_path / "corpus" / "manuals"
+    root.mkdir(parents=True)
+    (root / "guide.md").write_text("# Guide\n\nText about WDT_LOAD_VALUE.\n", encoding="utf-8")
+    crawler = DirectoryCrawler(tmp_path / "corpus", level_names=["category"])
+    build_artifacts(crawler.crawl(), level_names=["category"]).write(tmp_path / "old")
+    adapter = RecordingAdapter()
+    tar = TarRag.from_artifacts(tmp_path / "old", adapter=adapter)
+    outcome = tar.search("what does WDT_LOAD_VALUE do")
+    assert tar.section_router is None and tar.identifiers is None and tar.units is None
+    assert tar.orchestrator.top_k == 6
+    assert outcome.reason != "identifier_match"
+    assert len(adapter.calls) == 1
+
+
+def test_failing_file_is_recorded_and_the_run_continues(tmp_path: Path) -> None:
+    from tar_rag.models import DocumentRecord
+
+    good = tmp_path / "good.md"
+    good.write_text("# Fine\n\nText.\n", encoding="utf-8")
+    records = [
+        DocumentRecord("bad", "gone.md", "gone.md", str(tmp_path / "gone.md"), {}),
+        DocumentRecord("good", "good.md", "good.md", str(good), {}),
+    ]
+    summary = ingest_documents(records, tmp_path / "out", level_names=[], corpus_version="v1")
+    assert list(summary.failed) == ["gone.md"]
+    assert summary.documents == 1

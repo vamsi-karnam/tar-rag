@@ -7,7 +7,54 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-_No unreleased changes._
+## [0.3.0] - 2026-10-30
+
+This release takes `tar-rag` inside each file. Folder routing still works as before, and the new
+layer is opt-in with `tar-rag crawl --ingest`. Measured results are in `benchmarks/benchmark.md`.
+
+### Added
+- **`tar-rag crawl --ingest`**, with `--max-unit-tokens` and `--workers`. It writes per-file section
+  maps in `document_maps/`, units in `units/`, `unit_manifest.json` and `identifier_index.json`.
+  PDF, Markdown, HTML and DOCX get section trees. `TarRag.from_artifacts` finds these artifacts by
+  itself, and fetches 12 results instead of 6 when they are present.
+- **Evidence from inside files.** `search()` adds a section-routed search, BM25 word matches and exact
+  identifier lookup to the normal folder search, and removes nothing. New `reason` values:
+  `section_route` and `identifier_match`.
+- **`TarRag.context_for`** returns a `ContextBundle` within a token budget: the best hits, the rest of
+  any section split on size, and neighbouring units. Repeated text is dropped. `has_ocr` marks text
+  from OCR.
+- `examples/upload_units_openai.py`, and a Security section in the README and how-to guide.
+- **`StructuredPdfExtractor`** for long, table-heavy PDFs. It keeps tables as tables and reports what
+  it did:
+  - measures the word gap per document, for PDFs that store almost no space characters;
+  - drops diagonal watermarks before table finding, so their letters cannot land in cells;
+  - rebuilds tables from ruling lines, fills spanned cells, flattens grouped headers, and stitches a
+    table running over a page break, including a row that overflows the break;
+  - removes margin boilerplate by self-information;
+  - reads text turned 90 degrees along its own axis, and folds ligatures without touching superscripts;
+  - reads pages with graphics and no text layer with Tesseract, with the English model shipped. Any
+    other engine can be passed as `ocr=`;
+  - cross-checks numbers and hex values against `pypdf` in `report.conservation`.
+- `pdfplumber` and `tesserocr` are now dependencies, and `reportlab` a dev dependency for synthetic
+  test PDFs. See `THIRD_PARTY_NOTICES`.
+
+### Changed
+- **Breaking: `pip install tar-rag` no longer installs vector store or LLM clients.** Install the one you
+  use, for example `pip install "tar-rag[qdrant]"`, or `tar-rag[all]`.
+- `tesserocr` is a required dependency, so a platform with no wheel builds it from source. See the
+  README.
+- The minimum `openai` version is 1.66.0, `pinecone` 5.0.0 and `qdrant-client` 1.10.0. `QdrantAdapter`
+  uses `query_points`.
+- `[pdf]` and `[docx]` remain as no-op extras. Error messages no longer point to them.
+
+### Fixed
+- A failed search attempt now counts as incomplete, and its result is not cached.
+- The crawler rejects level names that would collide with reserved metadata keys.
+- `__version__` matches the package version.
+- The upload samples in the how-to guide and the PyPI README opened `relative_path` from the working
+  directory, not from the corpus.
+
+`PdfTextExtractor` stays the default for `.pdf`, so crawl output is unchanged unless you opt in.
 
 ## [0.2.0] - 2026-05-16
 

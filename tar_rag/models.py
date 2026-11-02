@@ -53,7 +53,7 @@ class QueryContext:
     """The resolved context for a single user query.
 
     ``resolved`` holds the level values tar-rag was able to pin down (e.g.
-    ``{"category": "instruments", "product": "datawell", "sub_type": None}``).
+    ``{"category": "instruments", "product": "acme", "sub_type": None}``).
     ``matched`` holds every candidate value matched per level — used to
     decide whether a clarification is needed.
     """
@@ -138,6 +138,7 @@ class RetrievalOutcome:
     clarification: dict[str, Any] | None = None
     cache_hit: bool = False
     error: str | None = None
+    incomplete: bool = False  # some search attempt failed, so this outcome is not cached
 
     @property
     def should_answer(self) -> bool:

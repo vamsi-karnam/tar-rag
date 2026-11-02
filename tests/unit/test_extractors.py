@@ -33,11 +33,11 @@ def test_plaintext_falls_back_to_latin1(tmp_path: Path) -> None:
 
 
 def test_json_flattens_nested_structure(tmp_path: Path) -> None:
-    payload = {"product": "datawell", "specs": {"battery": "lithium", "weight_kg": 12.5}}
+    payload = {"product": "acme", "specs": {"battery": "lithium", "weight_kg": 12.5}}
     target = tmp_path / "doc.json"
     target.write_text(json.dumps(payload), encoding="utf-8")
     text = JsonTextExtractor().extract(str(target))
-    assert "product: datawell" in text
+    assert "product: acme" in text
     assert "specs.battery: lithium" in text
     assert "specs.weight_kg: 12.5" in text
 

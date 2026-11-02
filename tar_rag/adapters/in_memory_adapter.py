@@ -9,11 +9,11 @@ Example fixture::
 
     fixture = {
         "q_specific": {
-            "category=instruments,product=datawell,sub_type=operator_manual": [
+            "category=instruments,product=acme,sub_type=operator_manual": [
                 {"score": 0.91, "snippet": "Calibration procedure..."},
             ],
-            "category=instruments,product=datawell": [
-                {"score": 0.78, "snippet": "Datawell DWR product overview..."},
+            "category=instruments,product=acme": [
+                {"score": 0.78, "snippet": "Acme Model X product overview..."},
             ],
             "*": [
                 {"score": 0.61, "snippet": "General wave measurement..."},

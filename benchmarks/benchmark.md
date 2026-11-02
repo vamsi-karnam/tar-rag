@@ -18,6 +18,9 @@ Both paths use the same vector store (`text-embedding-3-large`,
 OpenAI) and the same `top_k = 6`. The only thing that differs is
 whether the search is filtered to a topology branch.
 
+Benchmarks 1 to 3 measure retrieval with version 0.2.0. Benchmark 4 measures
+whole answers, end to end, between versions 0.2.0 and 0.3.0.
+
 ---
 
 ## What this benchmark is measuring
@@ -1519,3 +1522,86 @@ hash-only zero-content record that no threshold tuning can
 recover.
 
 *Net conclusion across all three benchmarks: the structural filter and the medium_min threshold are independent levers — the filter does the heavy lifting on semantically distinct corpora (where the threshold knob is idle) e.g. product guides / technical documentation, and the threshold tune does the heavy lifting on corpora with semantic continuity and ambiguity (where the filter alone leaves false positives in the medium band) e.g. code files / API documentation — so the right calibration choice is governed by the knowledge register of the corpus, not by tar-rag's shipped defaults.*
+
+---
+
+## Benchmark 4 — Version 0.3.0 against 0.2.0, end to end
+
+Benchmarks 1 to 3 ask whether retrieval improves. This one asks whether the
+answers do, and at what cost in tokens and time.
+
+### Setup
+
+- **Corpus.** A private corpus of 261 PDF technical manuals, which cannot be
+  redistributed. Many hold long tables, and some pages are images.
+- **Version 0.2.0.** Tag `v0.2.0`. Whole files uploaded to OpenAI Vector Stores,
+  with folder routing.
+- **Version 0.3.0.** `tar-rag crawl --ingest`, units uploaded one per file, folder
+  routing plus the file-level evidence, and `context_for` with its default budget.
+- **The same for both.** `text-embedding-3-large` through OpenAI Vector Stores,
+  `gpt-4o-mini` for answers, and the same answer prompt.
+- **Questions.** 100 unseen questions, written by an agent that saw neither version.
+  15 concern one confidential manual and are **left out of the tables below**, so 85
+  remain: 30 table values, 25 procedures, 15 product-specific, 15 unanswerable.
+- **Grading.** Each answer scored 0, 1 or 2 by a grader that did not know which
+  version wrote it. The versions took turns in batches of 10, and the code was frozen
+  before the run.
+
+### Results
+
+| Measure | 0.2.0 | 0.3.0 with `--ingest` |
+|---|---|---|
+| Points, of 170 | 136 | **150** |
+| Questions better, worse, same | | **10, 2, 73** |
+| Full marks | 66 | 74 |
+| Median input tokens per question | 2,796 | **2,603** (6.9% lower) |
+| Total input tokens | 235,115 | **213,554** (9.2% lower) |
+| Largest prompt, tokens | 4,636 | **3,458** |
+| Source document retrieved, of 70 | 65 | **70** |
+| Unanswerable questions declined, of 15 | 15 | 15 |
+| Median time per question | 2.37 s | 2.31 s |
+| 90th percentile time | 3.21 s | 4.56 s |
+| Build time | | about 3.5 times longer |
+
+Points by question type:
+
+| Type | 0.2.0 | 0.3.0 |
+|---|---|---|
+| Product-specific, of 30 | 18 | **28** |
+| Procedures, of 50 | 44 | 46 |
+| Table values, of 60 | 44 | 46 |
+| Unanswerable, of 30 | 30 | 30 |
+
+### Reading the results
+
+**Where it won.** Mostly on questions about one product among many similar ones,
+where the right section now reaches the context. Two answers existed only inside
+images and came from OCR, which version 0.2.0 does not have. Version 0.3.0 retrieved
+the source document for every answerable question, against 65 of 70.
+
+**Where it lost.** Two questions: one wrong table value, and one value graded as not
+exact enough. Table values remain the weakest type for both versions.
+
+**Time.** Typical time did not change. The 90th percentile is slower because the word
+index builds on the first query in each process, and this test started a new process
+for every 10 questions. A long-running service pays that cost once.
+
+**The gate.** Version 0.3.0's confidence gate declined none of the 15 unanswerable
+questions by itself, against 3 for version 0.2.0. The LLM declined them all, so the
+answer prompt did that work. Do not rely on the gate alone.
+
+### Limits
+
+- This is one corpus of one kind, and it cannot be shared, so nobody else can repeat
+  the run. Treat the figures as evidence from one test.
+- The gain is modest. Across all 100 questions, including the 15 left out, the score was
+  178 against 165 of 200, with 10 better and 3 worse: sign test p = 0.09, which does not
+  reach the usual 5% level. On the 15 left out, 0.3.0 scored 28 against 29 of 30.
+- This was the third round. The first (40 questions) gave 3 better and 3 worse, with 29%
+  fewer tokens. The second (100 new questions) gave 5 better and 7 worse, with 24% fewer
+  tokens. The losses were mostly incomplete lists, so neighbouring units, a larger fetch
+  and a larger budget were added, and four expert reviews led to further fixes. The
+  questions above were written after those changes. The fixes spent part of the token
+  saving.
+- Token counts cover the prompt sent to the LLM. Embedding costs are not included.
+- The build is slower: about 3.5 times longer for ingest and upload together.

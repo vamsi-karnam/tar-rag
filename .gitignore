@@ -82,3 +82,8 @@ docs/code-corpora-master/
 tar_rag_output_corpora
 tar_rag_output*
 tar_rag_discussion.md
+# Publication working directory - not part of the public repo (for now)
+experiment/
+paper/
+# Project work journal (gitignored, never committed)
+MEMORY.md
