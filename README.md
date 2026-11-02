@@ -452,21 +452,23 @@ answer from 0 to 2, and the code was frozen first.
 
 | Measure | 0.2.0 | 0.3.0 with `--ingest` |
 |---|---|---|
-| Points, of 170 | 136 | **150** |
-| Questions better, worse, same | | **10, 2, 73** |
-| Full marks | 66 | 74 |
-| Median input tokens per question | 2,796 | **2,603** (6.9% lower) |
-| Total input tokens | 235,115 | **213,554** (9.2% lower) |
-| Largest prompt, tokens | 4,636 | **3,458** |
+| Points, of 170 | 130 | **138** |
+| Questions better, worse, same | | **13, 8, 64** |
+| Full marks | 58 | 64 |
+| Median input tokens per question | 2,832 | **2,384** (15.8% lower) |
+| Total input tokens | 226,055 | **193,808** (14.3% lower) |
+| Largest prompt, tokens | 4,653 | **4,077** |
 | Source document retrieved, of 70 | 65 | **70** |
 | Unanswerable questions declined, of 15 | 15 | 15 |
-| Median time per question | 2.37 s | 2.31 s |
-| 90th percentile time | 3.21 s | 4.56 s |
+| Median time per question | 2.26 s | 2.44 s |
+| 90th percentile time | 3.06 s | 4.21 s |
 | Build time | | about 3.5 times longer |
 
-Better answers, fewer tokens and the same typical time, at the cost of a longer build. The slower
-90th percentile comes from the first-query index build, because this test started a new process
-for every 10 questions. This is one corpus, and it cannot be shared. Details and limits are in
+Fewer tokens, the source document found every time, and answers from image pages that 0.2.0 cannot
+read, at the cost of a longer build and a slightly longer typical time. Most of the gain in points
+comes from those image pages: on the other 80 questions, both versions scored 130. The slower 90th
+percentile comes from the first-query index build, because this test started a new process for
+every 10 questions. This is one corpus, and it cannot be shared. Details and limits are in
 [`benchmarks/benchmark.md`](benchmarks/benchmark.md#benchmark-4--version-030-against-020-end-to-end).
 
 ---

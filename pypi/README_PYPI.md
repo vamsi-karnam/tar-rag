@@ -173,20 +173,21 @@ embedding model and LLM. One corpus, which cannot be shared.
 
 | Measure | 0.2.0 | 0.3.0 with `--ingest` |
 |---|---|---|
-| Points, of 170 | 136 | **150** |
-| Questions better, worse, same | | **10, 2, 73** |
-| Full marks | 66 | 74 |
-| Median input tokens per question | 2,796 | **2,603** (6.9% lower) |
-| Total input tokens | 235,115 | **213,554** (9.2% lower) |
-| Largest prompt, tokens | 4,636 | **3,458** |
+| Points, of 170 | 130 | **138** |
+| Questions better, worse, same | | **13, 8, 64** |
+| Full marks | 58 | 64 |
+| Median input tokens per question | 2,832 | **2,384** (15.8% lower) |
+| Total input tokens | 226,055 | **193,808** (14.3% lower) |
+| Largest prompt, tokens | 4,653 | **4,077** |
 | Source document retrieved, of 70 | 65 | **70** |
 | Unanswerable questions declined, of 15 | 15 | 15 |
-| Median time per question | 2.37 s | 2.31 s |
-| 90th percentile time | 3.21 s | 4.56 s |
+| Median time per question | 2.26 s | 2.44 s |
+| 90th percentile time | 3.06 s | 4.21 s |
 | Build time | | about 3.5 times longer |
 
-The slower 90th percentile comes from a word index that builds once, on the first
-query in a process.
+Most of the gain in points comes from pages that only OCR can read: on the other 80
+questions, both versions scored 130. The slower 90th percentile comes from a word index
+that builds once, on the first query in a process.
 
 ## Security
 
