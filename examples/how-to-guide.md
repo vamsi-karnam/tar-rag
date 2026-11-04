@@ -298,7 +298,7 @@ adds evidence, and takes nothing away:
 | Evidence | When it runs | Effect |
 |---|---|---|
 | Section route | Query words cover at least half the weight of a section title, and one section wins clearly | Adds a search filtered to that section. `reason` becomes `section_route`. |
-| Word matches | Every query | A BM25 index over the units adds up to 3 units, or all of a short document. Their score is 0, so they cannot raise confidence. |
+| Word matches | Every query | A BM25 index over the units adds up to 3 units, or all of a short document. When the store finds nothing, they fill the results up to `top_k` instead. Their score is 0, so they cannot raise confidence. |
 | Exact names | The query holds a name from the identifier index | Puts those units first. `reason` becomes `identifier_match`. Confidence becomes `high` when at most 6 units hold the query's spelling. Otherwise it stays as the search set it, at `low` or above. |
 
 Lookup compares names with look-alike characters folded (`I` and `L` to `1`, `O` to
@@ -306,7 +306,11 @@ Lookup compares names with look-alike characters folded (`I` and `L` to `1`, `O`
 first, so `REG_10` comes before a look-alike `REG_IO`.
 
 Pinned `explicit_levels` limit all three: a file with no value at a pinned level is
-left out, and case does not matter. Word matches also prefer the scope a query names.
+left out, and case does not matter. A query names a folder when its words spell the folder name,
+with spaces, hyphens and `+` ("plus") set aside: "Cyclone IV" names `CycloneIV`, and "Zynq
+UltraScale+" names `ZynqUltraScalePlus`. Whole words only, so "PSoC 62" does not name `PSoC6`. A
+name that is not a spelling of the folder, such as one part number in a folder named for its series,
+needs a document alias. Word matches also prefer the scope a query names.
 They widen when no telling word of the query matches there: words that name the scope,
 or that appear in more than a tenth of all units, do not count. Pins are a search
 filter, not access control: the folder search can still widen past a pin when its

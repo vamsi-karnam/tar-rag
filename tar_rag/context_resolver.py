@@ -25,6 +25,35 @@ def _normalize(value: str) -> str:
     return " ".join(_TOKEN_RE.sub(" ", value.lower()).split())
 
 
+def _words(value: str) -> list[str]:
+    # "+" is read as a word, so "UltraScale+" can spell a folder named "UltraScalePlus".
+    return _normalize(value.replace("+", " plus ")).split()
+
+
+def _compact(value: str) -> str:
+    return "".join(_words(value))
+
+
+def _spelled_in(name: str, words: list[str]) -> bool:
+    """True when whole query words, joined, spell ``name``: "Cyclone IV" for CycloneIV.
+
+    Folder names often drop the spaces and punctuation people type. Whole words
+    only, so "PSoC 62" does not spell PSoC6.
+    """
+    target = _compact(name)
+    if not target:
+        return False
+    for start in range(len(words)):
+        joined = ""
+        for word in words[start:]:
+            joined += word
+            if joined == target:
+                return True
+            if not target.startswith(joined):
+                break
+    return False
+
+
 class ContextResolver:
     """Resolves a user query against a corpus map's level catalog.
 
@@ -335,15 +364,21 @@ class ContextResolver:
         for candidate in candidates:
             if _normalize(candidate) == target:
                 return candidate
+        for candidate in candidates:
+            if _compact(candidate) == _compact(value):
+                return candidate
         return None
 
     @staticmethod
     def _match_names(query: str, names: list[str]) -> list[str]:
         normalized_query = _normalize(query)
+        words = _words(query)
         matches: list[str] = []
         for name in names:
             normalized_name = _normalize(name)
             if normalized_name and normalized_name in normalized_query:
+                matches.append(name)
+            elif _spelled_in(name, words):
                 matches.append(name)
         return matches
 
@@ -352,6 +387,7 @@ class ContextResolver:
         query: str, documents: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
         normalized_query = _normalize(query)
+        words = _words(query)
         scored: list[tuple[int, dict[str, Any]]] = []
         for document in documents:
             aliases = {
@@ -362,7 +398,9 @@ class ContextResolver:
             best_score = 0
             for alias in aliases:
                 normalized_alias = _normalize(str(alias))
-                if normalized_alias and normalized_alias in normalized_query:
+                if normalized_alias and (
+                    normalized_alias in normalized_query or _spelled_in(str(alias), words)
+                ):
                     best_score = max(best_score, len(normalized_alias))
             if best_score > 0:
                 scored.append((best_score, document))

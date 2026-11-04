@@ -7,6 +7,27 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.3.1]
+
+Fixes found by a test on 23 public hardware manuals from 16 vendors (43,639 pages), using tar-rag's
+own units and word search with no vector store.
+
+### Fixed
+- **A query now names a folder however its words are spaced.** "Cyclone IV" names `CycloneIV`,
+  "SAM E70" names `SAME70`, "JH-7110" names `JH7110`, and "Zynq UltraScale+" names
+  `ZynqUltraScalePlus`, with `+` read as "plus". Before, such a folder was matched only when the
+  query spaced it the same way, so these queries got no scope. Whole words only: "PSoC 62" does not
+  name `PSoC6`. The same applies to `explicit_levels` and document aliases. On the test questions,
+  scope was found for 112 of 121 instead of 88, with no wrong scope before or after.
+- **Word search fills the results when the vector store finds nothing.** It added at most 3 units
+  whatever `top_k` was, so a store with no hits, or none in scope, left a short context. It now adds
+  up to `top_k`. With store results it still adds up to 3. On the test questions with an empty
+  store, the answer was in the top 5 for 97 of 121 instead of 93.
+
+### Changed
+- The README notes that `report.conservation` is a lower bound: `pypdf` can join values printed
+  apart, such as cells 8 and 14 read as "81 4", which then count as lost.
+
 ## [0.3.0] - 2026-10-30
 
 This release takes `tar-rag` inside each file. Folder routing still works as before, and the new

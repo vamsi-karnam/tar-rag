@@ -753,3 +753,41 @@ def test_core_install_lists_no_provider() -> None:
 
 def test_default_pdf_route_is_unchanged() -> None:
     assert isinstance(ExtractorRegistry().get(".pdf"), PdfTextExtractor)
+
+
+class _SourcePage:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def extract_text(self) -> str:
+        return self.text
+
+
+def _conservation(source: str, lines: list[str], rows: list[list[str]] | None = None) -> Any:
+    from tar_rag.extractors.pdf_structured import (
+        PdfExtractionReport,
+        _check_conservation,
+        _RawLine,
+        _RawPage,
+        _RawTable,
+    )
+
+    raw = _RawPage(number=1, lines=[_RawLine(n, n, text) for n, text in enumerate(lines)])
+    if rows:
+        raw.tables.append(_RawTable(0, 1, [], rows[0], rows[1:]))
+    reader = type("Reader", (), {"pages": [_SourcePage(source)]})()
+    report = PdfExtractionReport()
+    _check_conservation(reader, [raw], {1: []}, report)
+    return report
+
+
+def test_conservation_reports_a_dropped_value() -> None:
+    report = _conservation("Supply 3.3 V and 5.0 V at 25 MHz", ["Supply 3.3 V and 5.0 V at MHz"])
+    assert report.pages_with_lost_values == [1]
+    assert report.conservation is not None and report.conservation < 1.0
+
+
+def test_conservation_still_reports_a_dropped_cell_in_a_respaced_row() -> None:
+    source = "Pin Name\nU6RX 81 4 F 3 I ST UART6 receive"
+    report = _conservation(source, [], [["Pin", "Name", "", "", "", ""], ["U6RX", "8", "F3", "I", "ST", "UART6 receive"]])
+    assert report.pages_with_lost_values == [1]

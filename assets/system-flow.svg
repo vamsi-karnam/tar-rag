@@ -207,7 +207,7 @@ text{font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Ar
 <text x="636" y="805.0" class="t" text-anchor="start">--ingest: add evidence</text>
 <text x="636" y="825.0" class="d" text-anchor="start">Section route: title words pick a section, then one</text>
 <text x="648" y="841.0" class="d" text-anchor="start">more filtered search</text>
-<text x="636" y="857.0" class="d" text-anchor="start">Word matches: BM25 over units adds up to 3 units</text>
+<text x="636" y="857.0" class="d" text-anchor="start">Word matches: 3 BM25 units, or top_k if no hits</text>
 <text x="636" y="873.0" class="d" text-anchor="start">Exact names: their units lead. Confidence is high</text>
 <text x="648" y="889.0" class="d" text-anchor="start">if at most 6 units hold that exact spelling</text>
 </g>

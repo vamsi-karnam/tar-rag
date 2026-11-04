@@ -20,6 +20,7 @@ import json
 import logging
 import threading
 import warnings
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -320,11 +321,14 @@ class TarRag:
             return self._lexical
 
     def _lexical_results(
-        self, query: str, context: QueryContext, pins: dict[str, str]
+        self, query: str, context: QueryContext, pins: dict[str, str], fill: bool = False
     ) -> list[SearchResult]:
         if self.units is None or not self.units.rows:
             return []
         index = self._lexical_index()
+        # Word search adds a few units to what the store found. With nothing from the
+        # store, it is the only evidence, so it fills the results up to top_k.
+        search = partial(index.search, limit=self.orchestrator.top_k) if fill else index.search
 
         def in_pins(unit_id: str) -> bool:
             return self._in_scope(unit_id, pins)
@@ -336,8 +340,8 @@ class TarRag:
         # inside it. A pin never widens.
         names = [str(value) for value in context.resolved.values() if value]
         focused = index.distinctive(query, names) if names else ""
-        scoped = index.search(focused, keep=in_named_scope) if focused else []
-        found = self._unit_results(scoped or index.search(query, keep=in_pins), pins)
+        scoped = search(focused, keep=in_named_scope) if focused else []
+        found = self._unit_results(scoped or search(query, keep=in_pins), pins)
         for result in found:
             result.score = 0.0  # not comparable with a vector score, so it must not lift confidence
         return found
@@ -359,7 +363,7 @@ class TarRag:
             outcome.confidence = self.orchestrator.scorer.score(ordered)
             outcome.top_score = ordered[0].score
             outcome.reason = "section_route"
-        lexical = self._lexical_results(query, context, pins)
+        lexical = self._lexical_results(query, context, pins, fill=not outcome.results)
         if lexical:
             outcome.results = blend_results(outcome.results, lexical)
         if named:
