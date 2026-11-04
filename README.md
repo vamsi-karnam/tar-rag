@@ -351,7 +351,8 @@ document = StructuredPdfExtractor().extract_document("manual.pdf")
 document.tables[0].to_markdown()    # one logical table, stitched across pages
 document.outline                    # the PDF's bookmarks: title, level, page
 document.to_markdown()              # the whole file, with page markers
-document.report.conservation        # share of numbers and hex values found again by a second parser
+document.report.conservation        # share of numbers and hex values found again by a second parser;
+                                    # a lower bound, as pypdf can join values printed apart
 document.report.ocr_pages           # pages read by OCR, because they had no text layer
 ```
 

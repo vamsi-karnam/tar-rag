@@ -183,3 +183,53 @@ def test_context_signature_matches_resolved_levels(corpus_map: dict) -> None:
         (ctx.resolved.get(name) or "") for name in LEVEL_NAMES
     )
     assert ctx.context_signature == expected
+
+
+@pytest.fixture
+def chip_map() -> dict[str, Any]:
+    """Folders named the way vendors and users write them, without spaces."""
+    docs = [
+        _doc("Altera/CycloneIV/handbook.pdf", {"kind": "Altera", "topic": "CycloneIV"}),
+        _doc("AMD/ZynqUltraScalePlus/trm.pdf", {"kind": "AMD", "topic": "ZynqUltraScalePlus"}),
+        _doc("Microchip/SAME70/ds.pdf", {"kind": "Microchip", "topic": "SAME70"}),
+        _doc("Microchip/PIC32MX/ds.pdf", {"kind": "Microchip", "topic": "PIC32MX"}),
+        _doc("StarFive/JH7110/trm.pdf", {"kind": "StarFive", "topic": "JH7110"}),
+        _doc("Infineon/PSoC6/trm.pdf", {"kind": "Infineon", "topic": "PSoC6"}),
+    ]
+    return CorpusMapBuilder(LEVEL_NAMES).build(docs)
+
+
+@pytest.mark.parametrize(
+    ("query", "topic", "kind"),
+    [
+        ("What is the absolute maximum input voltage for Cyclone IV devices?", "CycloneIV", "Altera"),
+        ("Which Zynq UltraScale+ register holds the watchdog reset?", "ZynqUltraScalePlus", "AMD"),
+        ("What is the offset of the SAM E70 PMC_SLPWK_AIPR register?", "SAME70", "Microchip"),
+        ("What is the VCO frequency range of the JH-7110 PLL?", "JH7110", "StarFive"),
+        ("Which field on PSoC 6 inverts the output trigger?", "PSoC6", "Infineon"),
+        ("cycloneiv pin count", "CycloneIV", "Altera"),
+    ],
+)
+def test_folder_names_match_their_spaced_spelling(
+    chip_map: dict, query: str, topic: str, kind: str
+) -> None:
+    ctx = ContextResolver().resolve(query, chip_map)
+    assert ctx.resolved == {"kind": kind, "topic": topic}
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "What is the address of the PSoC 62 trigger register?",  # a longer name, not PSoC6
+        "Which cyclone variant is cheapest?",  # part of a name is not the name
+        "What does JH stand for?",
+    ],
+)
+def test_spaced_spelling_needs_whole_words_for_the_whole_name(chip_map: dict, query: str) -> None:
+    ctx = ContextResolver().resolve(query, chip_map)
+    assert ctx.resolved["topic"] is None
+
+
+def test_explicit_pin_accepts_the_spaced_spelling(chip_map: dict) -> None:
+    ctx = ContextResolver().resolve("reset value", chip_map, explicit_levels={"topic": "Cyclone IV"})
+    assert ctx.resolved["topic"] == "CycloneIV"

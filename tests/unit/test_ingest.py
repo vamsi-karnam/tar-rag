@@ -1075,3 +1075,16 @@ async def test_async_context_leaves_the_event_loop(
     bundle = await tar.acontext_for(outcome, max_tokens=500)
     assert "sets the timeout" in bundle.text
     assert seen and seen[0] != threading.get_ident()
+
+
+def test_word_search_fills_the_results_when_the_store_finds_nothing(tmp_path: Path) -> None:
+    tar = TarRag.from_artifacts(_scoped_corpus(tmp_path), adapter=BranchAdapter([], []))
+    outcome = tar.search("gasket")
+    assert _sources(outcome) == {f"manuals/alpha/m{n}.md" for n in range(6)}
+
+
+def test_word_search_stays_a_supplement_when_the_store_finds_something(tmp_path: Path) -> None:
+    hit = SearchResult(0.9, "stored text", {"unit_id": "", "source_path": "stored.md"})
+    tar = TarRag.from_artifacts(_scoped_corpus(tmp_path), adapter=FixedAdapter([hit]))
+    outcome = tar.search("gasket")
+    assert len(_sources(outcome) - {"stored.md"}) == 3
