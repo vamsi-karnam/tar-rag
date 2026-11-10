@@ -139,6 +139,9 @@ class RetrievalOutcome:
     cache_hit: bool = False
     error: str | None = None
     incomplete: bool = False  # some search attempt failed, so this outcome is not cached
+    # No vector store is configured: the results come from word search and exact names only,
+    # so there are no similarity scores for the confidence gate to judge.
+    word_only: bool = False
 
     @property
     def should_answer(self) -> bool:
@@ -160,6 +163,7 @@ class RetrievalOutcome:
             "clarification": self.clarification,
             "cache_hit": self.cache_hit,
             "error": self.error,
+            "word_only": self.word_only,
         }
 
 

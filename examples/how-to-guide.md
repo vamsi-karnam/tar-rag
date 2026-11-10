@@ -338,10 +338,32 @@ already taken is dropped. The result is grouped by document, in reading order.
 | `high`, `medium` | Up to the full budget |
 | `low` | The first 3 hits, so your LLM can answer or decline |
 | `none`, or no results | Nothing |
+| Any, with no vector store (`word_only`) | Up to the full budget when there are results; nothing when there are none |
 
 Check `bundle.skipped` to see how many units the budget left out. Set `max_tokens`
 for your own model. The default was chosen for one test set, so it is a starting
 point.
+
+### No vector store
+
+After `--ingest`, the units are enough to search on their own. Load the artifacts without an adapter:
+
+```python
+tar = TarRag.from_artifacts("./tar_rag_output/")   # no adapter
+result = tar.search("What does the IRQ_ENABLE field do?")
+bundle = tar.context_for(result)
+```
+
+`search()` runs the folder and section routing, the exact-name lookup and the word search, and skips
+the vector search. Each outcome has `word_only=True`. Word results carry no similarity score, so
+`confidence` stays `none` unless an exact name raises it, and `context_for` fills the budget whenever
+there are results (see the table above). A query with no results still gets nothing.
+
+- Without `--ingest` there are no units to search, so `search()` without an adapter still raises
+  `AdapterConfigurationError`.
+- `tar.set_adapter(...)` switches to the normal mode. A cache given with `set_cache()` in word-only
+  mode is held and attached then, so results found without a store are never served from the cache
+  once a store is set.
 
 ### Scanned pages and OCR
 

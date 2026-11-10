@@ -7,6 +7,28 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.3.2]
+
+A supported mode with no vector store, so the units, word search and exact-name lookup work on
+their own.
+
+### Added
+- **No vector store needed after `--ingest`.** `TarRag.from_artifacts(path)` with no adapter now
+  runs folder and section routing, exact-name lookup and BM25 word search, and skips the vector
+  search. Before, `search()` raised `AdapterConfigurationError` unless an adapter was set. Outcomes
+  carry `word_only=True`, also in `to_dict()`. Without ingested units a missing adapter is still an
+  error, and `set_adapter()` switches to the normal mode.
+
+### Changed
+- **`context_for()` fills the budget for word-only outcomes.** Word results carry no similarity
+  score, so their confidence stays `none` unless an exact name raises it, and `context_for()`
+  forwarded nothing. With no store it now fills the budget whenever there are results, and still
+  returns nothing when there are none. With a store nothing changes: no score still means no
+  context. On 293 test questions over 23 public manuals, the answer reached the context for 278
+  instead of 130, with the same search results as before for every question.
+- A `RetrievalCache` given to a word-only `TarRag` is held, not written, until `set_adapter()`, so
+  results found without a store are never served once a store is set.
+
 ## [0.3.1]
 
 Fixes found by a test on 23 public hardware manuals from 16 vendors (43,639 pages), using tar-rag's
