@@ -1088,3 +1088,96 @@ def test_word_search_stays_a_supplement_when_the_store_finds_something(tmp_path:
     tar = TarRag.from_artifacts(_scoped_corpus(tmp_path), adapter=FixedAdapter([hit]))
     outcome = tar.search("gasket")
     assert len(_sources(outcome) - {"stored.md"}) == 3
+
+
+# --- No vector store: word search and exact names only (0.3.2) ----------------------------
+
+
+class EmptyAdapter(AbstractVectorStoreAdapter):
+    def search(self, query: str, filters: dict[str, Any] | None, top_k: int) -> list[SearchResult]:
+        return []
+
+
+def test_search_without_a_store_uses_word_search(corpus: tuple[Path, Path]) -> None:
+    _, output = corpus
+    tar = TarRag.from_artifacts(output)
+    outcome = tar.search("which register sets the timeout")
+    assert tar.word_only
+    assert outcome.word_only
+    assert outcome.to_dict()["word_only"] is True
+    assert any("sets the timeout" in result.snippet for result in outcome.results)
+
+
+def test_context_without_a_store_fills_the_budget(corpus: tuple[Path, Path]) -> None:
+    _, output = corpus
+    outcome = TarRag.from_artifacts(output).search("which register sets the timeout")
+    assert outcome.confidence == "none"  # word results carry no score
+    bundle = TarRag.from_artifacts(output).context_for(outcome)
+    assert "sets the timeout" in bundle.text
+
+
+def test_a_store_that_finds_nothing_keeps_the_gate(corpus: tuple[Path, Path]) -> None:
+    _, output = corpus
+    tar = TarRag.from_artifacts(output, adapter=EmptyAdapter())
+    outcome = tar.search("which register sets the timeout")
+    assert not tar.word_only and not outcome.word_only
+    assert outcome.results  # word search still fills the results
+    assert outcome.confidence == "none"
+    assert tar.context_for(outcome).text == ""  # but with a store, no score means no context
+
+
+def test_search_without_a_store_matches_an_empty_store(corpus: tuple[Path, Path]) -> None:
+    _, output = corpus
+    word_only = TarRag.from_artifacts(output)
+    empty = TarRag.from_artifacts(output, adapter=EmptyAdapter())
+    for query in ("which register sets the timeout", "what does WDT_LOAD_VALUE do", "baud rates", "zzqq"):
+        a, b = word_only.search(query), empty.search(query)
+        assert [r.metadata.get("unit_id") for r in a.results] == [r.metadata.get("unit_id") for r in b.results]
+        assert (a.confidence, a.reason) == (b.confidence, b.reason)
+
+
+def test_word_only_with_no_results_forwards_nothing(corpus: tuple[Path, Path]) -> None:
+    _, output = corpus
+    tar = TarRag.from_artifacts(output)
+    outcome = tar.search("zzqq")
+    assert outcome.word_only and not outcome.results
+    assert tar.context_for(outcome).text == ""
+
+
+def test_no_units_and_no_store_is_still_an_error(tmp_path: Path) -> None:
+    root = tmp_path / "corpus" / "manuals" / "alpha"
+    root.mkdir(parents=True)
+    (root / "guide.md").write_text("# Guide\n\nWords.\n", encoding="utf-8")
+    output = tmp_path / "out"
+    assert cli_main(["crawl", str(tmp_path / "corpus"), "--levels", "category,product", "--output", str(output), "--quiet"]) == 0
+    tar = TarRag.from_artifacts(output)
+    assert not tar.word_only
+    with pytest.raises(TarRagError):
+        tar.search("words")
+
+
+def test_setting_a_store_ends_word_only_mode_and_attaches_the_cache(corpus: tuple[Path, Path]) -> None:
+    from tar_rag.cache import RetrievalCache
+
+    _, output = corpus
+    tar = TarRag.from_artifacts(output)
+    cache = RetrievalCache()
+    tar.set_cache(cache)
+    assert tar.orchestrator.cache is None  # word-only outcomes are never cached
+    adapter = RecordingAdapter()
+    tar.set_adapter(adapter)
+    assert not tar.word_only
+    assert tar.orchestrator.cache is cache
+    outcome = tar.search("which register sets the timeout")
+    assert adapter.calls
+    assert not outcome.word_only
+
+
+@pytest.mark.asyncio
+async def test_async_search_without_a_store(corpus: tuple[Path, Path]) -> None:
+    _, output = corpus
+    tar = TarRag.from_artifacts(output)
+    outcome = await tar.asearch("which register sets the timeout")
+    assert outcome.word_only
+    bundle = await tar.acontext_for(outcome)
+    assert "sets the timeout" in bundle.text

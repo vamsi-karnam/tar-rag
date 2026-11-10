@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tar-rag"
-version = "0.3.1"
+version = "0.3.2"
 description = "Topology-Aware Retrieval for RAG — structure from folders down to sections inside files, with no LLM in the routing"
 readme = "pypi/README_PYPI.md"
 license = "Apache-2.0"

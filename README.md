@@ -152,7 +152,9 @@ with the parallel fallback chain and per-attempt confidence scoring
 lives in [`examples/how-to-guide.md`](examples/how-to-guide.md#architecture-detail).
 
 `context_for()` also lets three units through at `low` confidence, so that your
-LLM can answer from them or decline. At `none` it returns nothing.
+LLM can answer from them or decline. At `none` it returns nothing. With no vector
+store there is no score to gate on, so it fills the budget whenever there are results
+(see [No vector store](#no-vector-store)).
 
 ### End-to-end flow
 
@@ -388,6 +390,24 @@ adapter for tests. Writing a custom one is a single class with a single
 method; see
 [`examples/how-to-guide.md`](examples/how-to-guide.md#custom-vector-store-adapter).
 
+### No vector store
+
+After `--ingest`, `tar-rag` can run without any vector store. Leave out the adapter:
+
+```python
+tar = TarRag.from_artifacts("./tar_rag_output/")   # no adapter
+result = tar.search("What does the IRQ_ENABLE field do?")
+bundle = tar.context_for(result)
+result.word_only   # True: word search and exact names, no vector search
+```
+
+Folder and section routing, exact-name lookup and BM25 word search all run as usual; only the vector
+search is skipped. Word results carry no similarity score, so `confidence` stays `none` unless an
+exact name raises it. In this mode `context_for()` therefore fills the budget whenever there are
+results, and returns nothing when there are none. Without `--ingest` there is nothing to search, so a
+missing adapter is still an error. `set_adapter()` switches to the normal mode at any time; a
+`RetrievalCache` is held until then, so results found without a store are never served once one is set.
+
 ---
 
 ## Async support
@@ -588,7 +608,9 @@ discriminative query vector, which directly improves top-K precision.
 2. **Forwarding everything at low confidence "just in case."** Undoes the
    gate entirely. If `result.confidence` is `"none"`, tell the user no good
    answer was found. At `"low"`, `context_for()` sends only three units, so
-   your LLM can decline. Build your own context the same way.
+   your LLM can decline. Build your own context the same way. (With no vector
+   store there is no score to gate on, so `context_for()` fills the budget; see
+   [No vector store](#no-vector-store).)
 3. **Caching the wrong layer.** Cache LLM responses keyed by raw user
    query and two phrasings of the same question miss the cache.
    `tar-rag`'s `RetrievalCache` is keyed by

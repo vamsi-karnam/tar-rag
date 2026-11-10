@@ -79,7 +79,8 @@ class RetrievalOrchestrator:
         if self._adapter is None:
             raise AdapterConfigurationError(
                 "No vector store adapter configured. Call set_adapter() "
-                "with an AbstractVectorStoreAdapter subclass first."
+                "with an AbstractVectorStoreAdapter subclass first, or crawl with "
+                "--ingest to search the units without a vector store."
             )
         return self._adapter
 

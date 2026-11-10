@@ -57,6 +57,13 @@ _TOP_K_WITH_UNITS = 12
 _MIN_RESULTS_WITH_UNITS = 3
 
 
+class _NoStore(AbstractVectorStoreAdapter):
+    """Stands in for a vector store when none is configured, so every search step runs unchanged."""
+
+    def search(self, query: str, filters: dict[str, Any] | None, top_k: int) -> list[SearchResult]:
+        return []
+
+
 class TarRag:
     """High-level entry point combining artifact loading + orchestration."""
 
@@ -85,12 +92,18 @@ class TarRag:
         self.corpus_version = str(corpus_map.get("version") or "")
         self.search_plan = search_plan  # may be None — orchestrator falls back to dynamic
         self.confidence = confidence or ConfidenceConfig()
+        # With ingested units and no vector store, tar-rag searches by words and exact names alone.
+        # Without units there would be nothing to search, so a missing adapter stays an error.
+        self.word_only = adapter is None and units is not None
         self.resolver = ContextResolver()
         self.search_plan_builder = SearchPlanBuilder(self.level_names)
+        # Word-only outcomes come from an empty stand-in store; cached, they would hide a real
+        # store's results once one is set. So the cache waits until set_adapter().
+        self._held_cache = cache if self.word_only else None
         self.orchestrator = RetrievalOrchestrator(
-            adapter=adapter,
+            adapter=_NoStore() if self.word_only else adapter,
             scorer=ConfidenceScorer(self.confidence.thresholds),
-            cache=cache,
+            cache=None if self.word_only else cache,
             corpus_version=self.corpus_version,
             top_k=top_k,
             parallel_fallback=parallel_fallback,
@@ -180,8 +193,15 @@ class TarRag:
 
     def set_adapter(self, adapter: AbstractVectorStoreAdapter) -> None:
         self.orchestrator.set_adapter(adapter)
+        if self.word_only:
+            self.word_only = False
+            self.orchestrator.cache = self._held_cache
+            self._held_cache = None
 
     def set_cache(self, cache: RetrievalCache | None) -> None:
+        if self.word_only:
+            self._held_cache = cache
+            return
         self.orchestrator.cache = cache
 
     # ------------------------------------------------------------------
@@ -378,6 +398,7 @@ class TarRag:
             outcome.top_score = 1.0
         elif attach_clarification:
             self._attach_clarification(context, outcome)
+        outcome.word_only = self.word_only
         return outcome
 
     def context_for(

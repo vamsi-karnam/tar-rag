@@ -133,7 +133,7 @@ text{font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Ar
 <path d="M366,546 C366,516 584,516 584,546 L584,968 C584,998 366,998 366,968 Z" class="b vs"/>
 <path d="M366,546 C366,576 584,576 584,546" class="cap"/>
 <text x="475" y="602" class="t" text-anchor="middle">Vector store</text>
-<text x="475" y="620" class="d" text-anchor="middle">Any store, through an adapter</text>
+<text x="475" y="620" class="d" text-anchor="middle">Any store, through an adapter;</text><text x="475" y="640" class="d" text-anchor="middle">optional after --ingest</text>
 <text x="382" y="668" class="d" text-anchor="start">Holds, per chunk or unit:</text>
 <text x="394" y="684" class="d" text-anchor="start">the text and its embedding</text>
 <text x="394" y="700" class="d" text-anchor="start">level values</text>

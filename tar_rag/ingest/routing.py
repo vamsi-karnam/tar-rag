@@ -363,15 +363,16 @@ def assemble_context(
     corpus can hold copies of a document.
 
     With low confidence, a few units still go through, so the LLM can decline or
-    answer from them: the score alone is a weak judge. No results means no
-    context. ``has_ocr`` tells the caller that some text came from OCR and may
-    hold misread characters.
+    answer from them: the score alone is a weak judge. Without a vector store
+    there is no score to judge, so the results fill the budget as they would
+    with high confidence. No results means no context. ``has_ocr`` tells the
+    caller that some text came from OCR and may hold misread characters.
     """
     bundle = ContextBundle()
     if not outcome.results:
         return bundle
     results = outcome.results
-    if not outcome.should_answer:
+    if not outcome.should_answer and not outcome.word_only:
         if not (outcome.executed and outcome.confidence == "low"):
             return bundle
         results = results[:_LOW_CONFIDENCE_UNITS]
